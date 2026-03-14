@@ -1,0 +1,201 @@
+{
+  "project_name": "AutoFlip Intelligence",
+  "design_philosophy": {
+    "persona": "E1: The Anti-AI Designer",
+    "archetype": "The Performance Pro (Elite Athleticism & Precision)",
+    "core_values": [
+      "Tactical Minimalism: Every pixel has a purpose.",
+      "Data Density: High information per square inch, but scannable.",
+      "Speed: Visuals must feel fast (italics, sharp edges, neon accents).",
+      "Trust: Financial data must look surgical and precise."
+    ],
+    "theme_strategy": "Dark Mode Only (Deep Obsidian #09090b)",
+    "forbidden_elements": [
+      "Rounded buttons (Use sharp or slightly rounded pill)",
+      "Generic 'SaaS Blue' gradients",
+      "Symmetry (Use asymmetry to guide the eye)",
+      "Slow animations"
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Barlow Condensed, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-5xl md:text-6xl font-black tracking-tighter uppercase",
+      "h2": "text-3xl md:text-4xl font-bold tracking-tight",
+      "h3": "text-xl md:text-2xl font-semibold tracking-normal",
+      "body": "text-base font-normal leading-relaxed",
+      "caption": "text-xs font-medium tracking-wider uppercase text-muted-foreground",
+      "data_value": "text-lg font-mono font-bold tracking-tight"
+    },
+    "installation": "Import from Google Fonts: Barlow Condensed (400, 600, 900), Manrope (400, 500, 700), JetBrains Mono (400, 700)"
+  },
+  "colors": {
+    "palette": {
+      "background": "#09090b",
+      "foreground": "#fafafa",
+      "card": "#121212",
+      "card_foreground": "#ffffff",
+      "popover": "#09090b",
+      "popover_foreground": "#fafafa",
+      "primary": "#2563eb",
+      "primary_foreground": "#fafafa",
+      "secondary": "#27272a",
+      "secondary_foreground": "#fafafa",
+      "muted": "#27272a",
+      "muted_foreground": "#a1a1aa",
+      "accent": "#2563eb",
+      "accent_foreground": "#fafafa",
+      "destructive": "#ef4444",
+      "destructive_foreground": "#fafafa",
+      "border": "#27272a",
+      "input": "#27272a",
+      "ring": "#2563eb"
+    },
+    "semantic": {
+      "profit": "#10b981",
+      "loss": "#ef4444",
+      "warning": "#f59e0b",
+      "info": "#3b82f6",
+      "deal_score_high": "#10b981",
+      "deal_score_med": "#f59e0b",
+      "deal_score_low": "#ef4444"
+    },
+    "glassmorphism": {
+      "bg": "bg-black/60",
+      "backdrop": "backdrop-blur-xl",
+      "border": "border-white/10"
+    }
+  },
+  "spacing_and_layout": {
+    "container_padding": "p-4 md:p-8 lg:p-12",
+    "section_gap": "gap-8",
+    "card_padding": "p-6",
+    "grid_strategy": {
+      "dashboard": "grid grid-cols-1 md:grid-cols-12 gap-6",
+      "feed": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
+      "detail_view": "grid grid-cols-1 lg:grid-cols-3 gap-8"
+    },
+    "border_radius": {
+      "default": "rounded-none",
+      "card": "rounded-sm",
+      "button": "rounded-sm",
+      "input": "rounded-sm"
+    }
+  },
+  "ui_components": {
+    "buttons": {
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_10px_rgba(37,99,235,0.5)] transition-all duration-200 font-bold uppercase tracking-wider",
+      "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-white/10",
+      "ghost": "hover:bg-accent hover:text-accent-foreground",
+      "outline": "border border-input hover:bg-accent hover:text-accent-foreground"
+    },
+    "cards": {
+      "base": "bg-card border border-border/50 shadow-none hover:border-primary/50 transition-colors duration-300",
+      "glass": "bg-black/40 backdrop-blur-md border border-white/10"
+    },
+    "inputs": {
+      "base": "bg-background border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    },
+    "badges": {
+      "base": "inline-flex items-center rounded-sm border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+      "profit": "border-transparent bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25",
+      "loss": "border-transparent bg-red-500/15 text-red-500 hover:bg-red-500/25",
+      "neutral": "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80"
+    }
+  },
+  "visual_enhancers": {
+    "gradients": {
+      "profit_glow": "bg-gradient-to-r from-emerald-500/10 to-transparent",
+      "danger_glow": "bg-gradient-to-r from-red-500/10 to-transparent",
+      "active_border": "bg-gradient-to-r from-transparent via-primary/50 to-transparent"
+    },
+    "textures": {
+      "grid_bg": "bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]",
+      "noise": "opacity-[0.03]"
+    }
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-[1.5px]",
+      "size": {
+        "sm": "h-4 w-4",
+        "md": "h-5 w-5",
+        "lg": "h-6 w-6",
+        "xl": "h-8 w-8"
+      }
+    },
+    "images": {
+      "luxury_car_hero": "https://images.unsplash.com/photo-1762314908735-6c7fab306f86?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHw0fHxsdXh1cnklMjBzcG9ydHMlMjBjYXIlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzM1MTE5Mjl8MA&ixlib=rb-4.1.0&q=85",
+      "car_showroom": "https://images.unsplash.com/photo-1669606070123-ed48fdcffc9b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBzcG9ydHMlMjBjYXIlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzM1MTE5Mjl8MA&ixlib=rb-4.1.0&q=85",
+      "damaged_bumper": "https://images.unsplash.com/photo-1738346229456-3718abb7da96?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxkYW1hZ2VkJTIwY2FyJTIwYnVtcGVyJTIwc2NyYXRjaHxlbnwwfHx8fDE3NzM1MTE5Mjl8MA&ixlib=rb-4.1.0&q=85",
+      "damaged_hood": "https://images.unsplash.com/photo-1725199984598-20faa3755843?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwyfHxkYW1hZ2VkJTIwY2FyJTIwYnVtcGVyJTIwc2NyYXRjaHxlbnwwfHx8fDE3NzM1MTE5Mjl8MA&ixlib=rb-4.1.0&q=85",
+      "damaged_rust": "https://images.unsplash.com/photo-1707510844729-c0a09348f54f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHw0fHxkYW1hZ2VkJTIwY2FyJTIwYnVtcGVyJTIwc2NyYXRjaHxlbnwwfHx8fDE3NzM1MTE5Mjl8MA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "motion": {
+    "reduced_motion": "respect-prefers-reduced-motion",
+    "page_transition": {
+      "initial": { "opacity": 0, "y": 20 },
+      "animate": { "opacity": 1, "y": 0 },
+      "exit": { "opacity": 0, "y": -20 },
+      "transition": { "duration": 0.3, "ease": "easeOut" }
+    },
+    "list_stagger": {
+      "container": {
+        "hidden": { "opacity": 0 },
+        "show": {
+          "opacity": 1,
+          "transition": { "staggerChildren": 0.05 }
+        }
+      },
+      "item": {
+        "hidden": { "opacity": 0, "y": 10 },
+        "show": { "opacity": 1, "y": 0 }
+      }
+    },
+    "hover_effects": "hover:-translate-y-1 hover:shadow-lg transition-all duration-200"
+  },
+  "charts": {
+    "library": "recharts",
+    "theme": {
+      "background": "transparent",
+      "grid_stroke": "#27272a",
+      "tooltip_bg": "#121212",
+      "tooltip_border": "#27272a",
+      "colors": ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
+    }
+  },
+  "accessibility": {
+    "contrast_check": "Ensure 4.5:1 ratio for text. Use lighter grays (e.g., zinc-400) on dark backgrounds, never dark gray on black.",
+    "focus_states": "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none",
+    "aria_labels": "Required for all icon-only buttons"
+  },
+  "page_specific_rules": {
+    "dashboard": "Use the 'Tetris Grid' layout. Hero metric (Profit Potential) takes dominant space. Live feed must scroll automatically or feel 'alive' with pulsing indicators.",
+    "live_feed": "Cards must be dense. Use 'Masonry' or 'Grid' layout. Quick action buttons (Analyze, Watch, Ignore) must be visible without hovering.",
+    "analysis_view": "Split screen: Left side images/carousel, Right side data/metrics. Use progress bars for 'Damage Score'.",
+    "market_intel": "Use heatmaps (green to red) for demand/supply. Large typography for key trends."
+  },
+  "universal_guidelines_for_main_agent": [
+    "Don't make generic centered layouts. Use asymmetry.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Main agent relies on these image URLs. Missing categories = main agent will use placeholder text which is FORBIDDEN.",
+    "All interactive elements MUST include data-testid attributes."
+  ],
+  "instructions_to_main_agent": [
+    "1. Install required fonts: Barlow Condensed, Manrope, JetBrains Mono.",
+    "2. Setup Tailwind config with the specified color palette and dark mode defaults.",
+    "3. Create the 'AppLayout' component with a persistent sidebar and top bar.",
+    "4. Implement the 'Live Feed' using the specified grid layout and motion presets.",
+    "5. Use 'recharts' for all data visualization.",
+    "6. Ensure all 'money' values are formatted with the currency (CAD/USD) and use the mono font.",
+    "7. Use the provided image URLs for placeholders in the UI."
+  ]
+}
