@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for AutoFlip Intelligence
-Tests all API endpoints systematically using the public URL
+Backend API Testing for AutoFlip Intelligence Car Dealer Monitoring App
+Tests all actual API endpoints systematically using the public URL
 """
 
 import requests
 import sys
 import json
+import time
 from datetime import datetime
 from typing import Dict, Any
 
@@ -101,15 +102,51 @@ class AutoFlipAPITester:
         # Basic listings fetch
         success, response = self.run_test("Get All Listings", "GET", "/listings", 200)
         
-        # Test with filters
-        self.run_test("Get Listings - Filter by Source", "GET", "/listings", 200, 
+        # Test with source filters
+        self.run_test("Get Listings - Cathcart Rebuilders", "GET", "/listings", 200, 
                      params={"source": "cathcart_rebuilders"})
-        self.run_test("Get Listings - Filter by Price", "GET", "/listings", 200,
-                     params={"min_price": 5000, "max_price": 15000})
-        self.run_test("Get Listings - Filter by Score", "GET", "/listings", 200,
-                     params={"min_score": 50})
-        self.run_test("Get Listings - Sort by Price", "GET", "/listings", 200,
+        self.run_test("Get Listings - Cathcart Used", "GET", "/listings", 200,
+                     params={"source": "cathcart_used"})
+        self.run_test("Get Listings - Pic N Save", "GET", "/listings", 200,
+                     params={"source": "picnsave"})
+        
+        # Test with price filters
+        self.run_test("Get Listings - Max Price Filter", "GET", "/listings", 200,
+                     params={"max_price": 15000})
+        
+        # Test with profit filters
+        self.run_test("Get Listings - Min Profit Filter", "GET", "/listings", 200,
+                     params={"min_profit": 2000})
+        
+        # Test with score filters (scores are 1-10, not 50)
+        self.run_test("Get Listings - Min Score 5", "GET", "/listings", 200,
+                     params={"min_score": 5})
+        self.run_test("Get Listings - Min Score 8", "GET", "/listings", 200,
+                     params={"min_score": 8})
+        
+        # Test search functionality
+        self.run_test("Get Listings - Search Toyota", "GET", "/listings", 200,
+                     params={"search": "Toyota"})
+        self.run_test("Get Listings - Search 2020", "GET", "/listings", 200,
+                     params={"search": "2020"})
+        
+        # Test damage filter
+        self.run_test("Get Listings - Front Damage", "GET", "/listings", 200,
+                     params={"damage_type": "FRONT"})
+        
+        # Test sorting
+        self.run_test("Get Listings - Sort by Deal Score", "GET", "/listings", 200,
+                     params={"sort_by": "deal_score", "sort_order": "desc"})
+        self.run_test("Get Listings - Sort by Profit", "GET", "/listings", 200,
+                     params={"sort_by": "profit", "sort_order": "desc"})
+        self.run_test("Get Listings - Sort by Price Asc", "GET", "/listings", 200,
                      params={"sort_by": "price", "sort_order": "asc"})
+        self.run_test("Get Listings - Sort by Mileage", "GET", "/listings", 200,
+                     params={"sort_by": "mileage", "sort_order": "asc"})
+        
+        # Test status filter
+        self.run_test("Get Listings - For Sale Status", "GET", "/listings", 200,
+                     params={"status": "for_sale"})
         
         return success, response
 
@@ -128,114 +165,51 @@ class AutoFlipAPITester:
             return False, {}
 
     def test_stats(self):
-        """Test GET /stats"""
-        return self.run_test("Get Dashboard Stats", "GET", "/stats", 200)
+        """Test GET /stats - dashboard statistics"""
+        success, response = self.run_test("Get Dashboard Stats", "GET", "/stats", 200)
+        
+        # Validate required fields in stats response
+        if success and response:
+            required_fields = ['total_listings', 'buy_count', 'watch_count', 'skip_count', 
+                             'top_profit', 'source_counts']
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"⚠️  Missing required fields in stats: {missing_fields}")
+            else:
+                print(f"✅ Stats contains all required fields")
+                print(f"   Total listings: {response.get('total_listings', 'N/A')}")
+                print(f"   BUY deals: {response.get('buy_count', 'N/A')}")
+                print(f"   WATCH deals: {response.get('watch_count', 'N/A')}")
+                print(f"   SKIP deals: {response.get('skip_count', 'N/A')}")
+                print(f"   Top profit: ${response.get('top_profit', 'N/A')}")
+        
+        return success, response
 
-    def test_watchlist_operations(self):
-        """Test watchlist CRUD operations"""
-        # Get watchlist
-        success, watchlist = self.run_test("Get Watchlist", "GET", "/watchlist", 200)
+    def test_scraping_functionality(self):
+        """Test scraping endpoints"""
+        # Get initial scrape status
+        success, initial_status = self.run_test("Get Initial Scrape Status", "GET", "/scrape-status", 200)
         
-        # Try to add to watchlist (need a listing ID first)
-        success, listings = self.test_get_listings()
-        if success and listings and len(listings) > 0:
-            listing_id = listings[0].get('id')
-            
-            # Add to watchlist
-            add_success, add_response = self.run_test("Add to Watchlist", "POST", "/watchlist", 200,
-                                                    data={"listing_id": listing_id, "notes": "Test watchlist entry"})
-            
-            if add_success:
-                watchlist_id = add_response.get('id')
-                if watchlist_id:
-                    # Update watchlist entry
-                    self.run_test("Update Watchlist", "PUT", f"/watchlist/{watchlist_id}", 200,
-                                data={"notes": "Updated test notes"})
-                    
-                    # Remove from watchlist
-                    self.run_test("Remove from Watchlist", "DELETE", f"/watchlist/{watchlist_id}", 200)
+        # Trigger manual scrape
+        success, scrape_response = self.run_test("Trigger Manual Scrape", "POST", "/scrape", 200)
         
-        return success, watchlist
-
-    def test_portfolio_operations(self):
-        """Test portfolio CRUD operations"""
-        # Get portfolio
-        success, portfolio = self.run_test("Get Portfolio", "GET", "/portfolio", 200)
-        
-        # Create portfolio entry
-        create_success, create_response = self.run_test("Create Portfolio Entry", "POST", "/portfolio", 200, data={
-            "vehicle_description": "2020 Test Vehicle",
-            "buy_date": "2024-01-15",
-            "buy_price": 8500,
-            "repair_items": [
-                {"description": "Test repair", "cost": 500, "date": "2024-01-20"}
-            ],
-            "sale_date": "2024-02-15",
-            "sale_price": 12000,
-            "notes": "Test portfolio entry"
-        })
-        
-        if create_success and create_response:
-            portfolio_id = create_response.get('id')
-            if portfolio_id:
-                # Update portfolio
-                self.run_test("Update Portfolio Entry", "PUT", f"/portfolio/{portfolio_id}", 200,
-                            data={"notes": "Updated test notes"})
+        if success and scrape_response:
+            if scrape_response.get('status') == 'already_running':
+                print("   Scrape already in progress")
+            elif scrape_response.get('status') == 'started':
+                print("   Scrape started successfully")
                 
-                # Delete portfolio entry
-                self.run_test("Delete Portfolio Entry", "DELETE", f"/portfolio/{portfolio_id}", 200)
+                # Wait a bit and check status again
+                time.sleep(2)
+                self.run_test("Get Scrape Status After Start", "GET", "/scrape-status", 200)
         
-        return success, portfolio
-
-    def test_settings_operations(self):
-        """Test settings operations"""
-        # Get settings
-        success, settings = self.run_test("Get Settings", "GET", "/settings", 200)
-        
-        # Update settings
-        update_success, update_response = self.run_test("Update Settings", "PUT", "/settings", 200, data={
-            "diy_mode": True,
-            "shop_rate": 120.0,
-            "available_capital": 60000.0,
-            "alert_filters": {
-                "max_price": 25000,
-                "min_deal_score": 45
-            }
-        })
-        
-        # Test notification (will likely fail without API keys, but should return structured response)
-        self.run_test("Test Notifications", "POST", "/settings/test-notify", 200)
-        
-        return success, settings
-
-    def test_market_intelligence(self):
-        """Test market intelligence endpoint"""
-        return self.run_test("Get Market Intelligence", "GET", "/market-intelligence", 200)
-
-    def test_individual_listing_operations(self):
-        """Test listing-specific operations like analysis and recalculation"""
-        # Get a listing ID first
-        success, listings = self.test_get_listings()
-        if success and listings and len(listings) > 0:
-            listing_id = listings[0].get('id')
-            
-            # Test get photos
-            self.run_test("Get Listing Photos", "GET", f"/listings/{listing_id}/photos", 200)
-            
-            # Test get analysis
-            self.run_test("Get Listing Analysis", "GET", f"/listings/{listing_id}/analysis", 200)
-            
-            # Test recalculate
-            self.run_test("Recalculate Listing", "POST", f"/listings/{listing_id}/recalculate", 200)
-            
-            # Test analyze (may fail without EMERGENT_LLM_KEY, but should return structured response)
-            self.run_test("Analyze Listing Photos", "POST", f"/listings/{listing_id}/analyze", 200)
+        return success, scrape_response
 
     def run_comprehensive_test(self):
         """Run all tests in sequence"""
-        print("🚀 Starting AutoFlip Intelligence API Testing")
+        print("🚀 Starting AutoFlip Intelligence Car Dealer Monitoring API Testing")
         print(f"📡 Testing against: {self.base_url}")
-        print("=" * 60)
+        print("=" * 70)
         
         # Test API availability
         self.test_api_root()
@@ -243,25 +217,15 @@ class AutoFlipAPITester:
         # Core listing functionality
         self.test_get_listings()
         self.test_get_single_listing()
-        self.test_individual_listing_operations()
         
         # Dashboard stats
         self.test_stats()
         
-        # Watchlist operations
-        self.test_watchlist_operations()
-        
-        # Portfolio operations  
-        self.test_portfolio_operations()
-        
-        # Settings
-        self.test_settings_operations()
-        
-        # Market intelligence
-        self.test_market_intelligence()
+        # Scraping functionality
+        self.test_scraping_functionality()
         
         # Print summary
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print(f"📊 Test Results Summary")
         print(f"Total Tests: {self.tests_run}")
         print(f"Passed: {self.tests_passed}")
@@ -279,11 +243,33 @@ class AutoFlipAPITester:
         else:
             print("\n🎉 All tests passed!")
         
+        # Show some sample data insights
+        print(f"\n📈 Data Insights:")
+        for test in self.test_results:
+            if test['success'] and test['test'] == 'Get All Listings' and test['response_json']:
+                listings = test['response_json']
+                print(f"   • Total listings in database: {len(listings)}")
+                
+                # Count by source
+                sources = {}
+                deal_scores = {}
+                for listing in listings:
+                    source = listing.get('source', 'unknown')
+                    sources[source] = sources.get(source, 0) + 1
+                    
+                    deal_label = listing.get('deal_label')
+                    if deal_label:
+                        deal_scores[deal_label] = deal_scores.get(deal_label, 0) + 1
+                
+                print(f"   • By source: {sources}")
+                print(f"   • By deal score: {deal_scores}")
+                break
+        
         return self.tests_passed == self.tests_run
 
 def main():
     print("AutoFlip Intelligence - Backend API Tests")
-    print("Testing all endpoints systematically...")
+    print("Testing car dealer monitoring app endpoints...")
     
     tester = AutoFlipAPITester()
     success = tester.run_comprehensive_test()
