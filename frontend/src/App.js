@@ -293,6 +293,7 @@ function Dashboard() {
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="for_sale">For Sale</SelectItem>
             <SelectItem value="coming_soon">Coming Soon</SelectItem>
+            <SelectItem value="sold">Sold / Inactive</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filters.sort_by} onValueChange={(v) => updateFilter('sort_by', v)}>

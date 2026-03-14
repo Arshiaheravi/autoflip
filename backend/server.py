@@ -1225,7 +1225,14 @@ async def get_listings(
     status: Optional[str] = None,
     brand_type: Optional[str] = None,
 ):
-    query = {"is_inactive": {"$ne": True}}
+    query = {}
+    if status == "sold":
+        query["is_inactive"] = True
+    elif status:
+        query["is_inactive"] = {"$ne": True}
+        query["status"] = status
+    else:
+        query["is_inactive"] = {"$ne": True}
     if source:
         query["source"] = source
     if max_price is not None:
@@ -1234,8 +1241,6 @@ async def get_listings(
         query["damage"] = {"$regex": damage_type, "$options": "i"}
     if search:
         query["title"] = {"$regex": search, "$options": "i"}
-    if status:
-        query["status"] = status
     if brand_type:
         if brand_type == "salvage":
             query["brand"] = {"$regex": "SALVAGE", "$options": "i"}
@@ -1359,8 +1364,8 @@ async def update_settings(data: dict):
 
 @api_router.post("/recalculate")
 async def recalculate_all():
-    """Recalculate market value, repair cost, and profit for all existing listings using v2 engine."""
-    listings = await db.listings.find({"is_inactive": {"$ne": True}}, {"_id": 0}).to_list(500)
+    """Recalculate market value, repair cost, and profit for ALL listings (active + sold) using v2 engine."""
+    listings = await db.listings.find({}, {"_id": 0}).to_list(500)
     updated = 0
     ai_count = 0
     for l in listings:
