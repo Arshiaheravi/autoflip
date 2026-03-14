@@ -30,3 +30,17 @@ export function daysSince(dateStr) {
   if (!dateStr) return 0;
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
+
+export function fmtDate(dateStr) {
+  if (!dateStr) return '--';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffH = Math.floor(diffMs / 3600000);
+  const diffD = Math.floor(diffMs / 86400000);
+  if (diffH < 1) return 'Just now';
+  if (diffH < 24) return `${diffH}h ago`;
+  if (diffD === 1) return 'Yesterday';
+  if (diffD < 7) return `${diffD}d ago`;
+  return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+}

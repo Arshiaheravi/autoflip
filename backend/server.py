@@ -835,6 +835,7 @@ async def get_listings(
         "profit": lambda x: x.get("profit_best") or -999999,
         "price": lambda x: x.get("price") or 999999,
         "mileage": lambda x: x.get("mileage") or 999999,
+        "date": lambda x: x.get("first_seen") or "",
     }.get(sort_by, lambda x: x.get("deal_score") or 0)
 
     listings.sort(key=sort_key, reverse=reverse)

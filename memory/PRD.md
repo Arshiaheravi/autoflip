@@ -57,6 +57,14 @@ Build a web app that monitors two car dealer websites (Cathcart Auto, Pic N Save
 - Backend: brand_type query parameter on GET /api/listings
 - Frontend: Two new Select dropdowns with data-testid attributes
 
+## Date Found Feature (Added 2026-03-14)
+- Each listing shows "Date Found" — when it was first discovered by the scraper
+- Desktop: new "Found" column in the listing table with relative dates (Just now, 2h ago, Yesterday, 3d ago, Mar 15)
+- Mobile: date shown inline on each card
+- Detail dialog: full date shown in info cells row
+- Sort by "Date Found" option added to sort dropdown
+- Backend: sort_by=date uses first_seen field
+
 ## Backlog
 - P0: Enhance calculation engine for hyper-accuracy (user requested "perfectly accurate" calculations)
 - P0: Update About page with detailed new calculation methodology

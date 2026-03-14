@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import '@/App.css';
 import { listingsApi, statsApi, scrapeApi, settingsApi } from '@/lib/api';
-import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge } from '@/lib/utils-app';
+import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge, fmtDate } from '@/lib/utils-app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -304,6 +304,7 @@ function Dashboard() {
             <SelectItem value="profit">Profit</SelectItem>
             <SelectItem value="price">Price</SelectItem>
             <SelectItem value="mileage">Mileage</SelectItem>
+            <SelectItem value="date">Date Found</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className="border-border/50 text-xs" data-testid="toggle-filters-btn">
@@ -333,8 +334,8 @@ function Dashboard() {
       {/* Listings */}
       {!loading && listings.length > 0 && (
         <div className="space-y-2" data-testid="listings-container">
-          <div className="hidden lg:grid grid-cols-12 gap-2 px-4 py-2 text-[10px] text-muted-foreground uppercase tracking-wider">
-            <div className="col-span-3">Vehicle</div><div>Source</div><div className="text-right">Price</div><div className="text-right">Mileage</div><div>Damage</div><div className="text-right">Market Value</div><div className="text-right">Repair Est.</div><div className="text-right">Profit Range</div><div className="text-right">ROI</div><div className="text-center">Score</div>
+          <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr] gap-2 px-4 py-2 text-[10px] text-muted-foreground uppercase tracking-wider">
+            <div>Vehicle</div><div>Source</div><div className="text-right">Price</div><div className="text-right">Mileage</div><div>Damage</div><div className="text-right">Market Value</div><div className="text-right">Repair Est.</div><div className="text-right">Profit Range</div><div className="text-right">ROI</div><div className="text-center">Score</div><div className="text-right">Found</div>
           </div>
           {listings.map((listing, i) => (
             <ListingRow key={listing.id || listing.url} listing={listing} index={i} onClick={() => setSelectedListing(listing)} />
@@ -656,8 +657,8 @@ function ListingRow({ listing, index, onClick }) {
   return (
     <>
       {/* Desktop */}
-      <div className="hidden lg:grid grid-cols-12 gap-2 items-center px-4 py-3 bg-card border border-border/50 rounded-sm listing-row cursor-pointer" onClick={onClick} data-testid={`listing-row-${l.id || index}`}>
-        <div className="col-span-3 flex items-center gap-3 min-w-0">
+      <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr] gap-2 items-center px-4 py-3 bg-card border border-border/50 rounded-sm listing-row cursor-pointer" onClick={onClick} data-testid={`listing-row-${l.id || index}`}>
+        <div className="flex items-center gap-3 min-w-0">
           <div className="w-16 h-12 bg-secondary rounded-sm overflow-hidden shrink-0">
             {l.photo ? <img src={l.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <div className="flex items-center justify-center h-full"><Car className="h-4 w-4 text-muted-foreground/30" /></div>}
           </div>
@@ -691,6 +692,9 @@ function ListingRow({ listing, index, onClick }) {
             <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-sm border ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10 {l.deal_label}</span>
           ) : <span className="text-xs text-muted-foreground">--</span>}
         </div>
+        <div className="text-right">
+          <span className="text-[11px] text-muted-foreground font-data" data-testid={`listing-date-${l.id || index}`}>{fmtDate(l.first_seen)}</span>
+        </div>
       </div>
       {/* Mobile */}
       <div className="lg:hidden bg-card border border-border/50 rounded-sm p-3 cursor-pointer listing-row" onClick={onClick} data-testid={`listing-card-${l.id || index}`}>
@@ -707,6 +711,7 @@ function ListingRow({ listing, index, onClick }) {
               <span className="font-bold font-data text-primary">{hasPrice ? fmt(l.price) : 'TBD'}</span>
               <span className="text-muted-foreground">{l.mileage ? `${fmtNum(l.mileage)} km` : ''}</span>
               <span className={`text-[9px] px-1 py-0.5 rounded-sm ${sourceColor(l.source)}`}>{sourceLabel(l.source).split(' ')[0]}</span>
+              <span className="text-[10px] text-muted-foreground font-data ml-auto">{fmtDate(l.first_seen)}</span>
             </div>
             {hasProfit && (
               <div className="flex items-center gap-3 mt-1 text-xs">
@@ -745,10 +750,11 @@ function DetailDialog({ listing, onClose }) {
               <InfoCell icon={Wrench} label="Damage" value={l.damage || 'None listed'} />
               <InfoCell icon={Car} label="Brand" value={l.brand || 'Unknown'} />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <InfoCell label="Source" value={sourceLabel(l.source)} />
               <InfoCell label="Colour" value={l.colour || 'Unknown'} />
               <InfoCell label="Status" value={l.status?.replace('_', ' ').toUpperCase() || 'Unknown'} />
+              <InfoCell icon={Clock} label="Date Found" value={l.first_seen ? new Date(l.first_seen).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Unknown'} />
             </div>
             {l.description && <div className="bg-background/50 border border-border/30 rounded-sm p-3"><p className="text-xs text-muted-foreground">{l.description}</p></div>}
             <Separator className="bg-border/30" />
