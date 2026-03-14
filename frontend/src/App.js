@@ -188,6 +188,7 @@ function Dashboard() {
   const [filters, setFilters] = useState({
     source: '', search: '', min_profit: '', max_price: '',
     min_score: '', damage_type: '', sort_by: 'deal_score', sort_order: 'desc',
+    status: '', brand_type: '',
   });
 
   const fetchData = useCallback(async () => {
@@ -199,6 +200,8 @@ function Dashboard() {
       if (filters.max_price) params.max_price = parseFloat(filters.max_price);
       if (filters.min_score) params.min_score = parseInt(filters.min_score);
       if (filters.damage_type) params.damage_type = filters.damage_type;
+      if (filters.status) params.status = filters.status;
+      if (filters.brand_type) params.brand_type = filters.brand_type;
       params.sort_by = filters.sort_by;
       params.sort_order = filters.sort_order;
       const [listRes, statsRes] = await Promise.all([
@@ -269,6 +272,27 @@ function Dashboard() {
             <SelectItem value="cathcart_rebuilders">Cathcart Rebuilders</SelectItem>
             <SelectItem value="cathcart_used">Cathcart Used</SelectItem>
             <SelectItem value="picnsave">Pic N Save</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filters.brand_type || 'all'} onValueChange={(v) => updateFilter('brand_type', v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-[150px] bg-card border-border/50 text-sm" data-testid="brand-type-filter">
+            <Shield className="h-3 w-3 mr-1" /><SelectValue placeholder="All Titles" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Titles</SelectItem>
+            <SelectItem value="salvage">Salvage</SelectItem>
+            <SelectItem value="clean">Clean</SelectItem>
+            <SelectItem value="rebuilt">Rebuilt</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filters.status || 'all'} onValueChange={(v) => updateFilter('status', v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-[160px] bg-card border-border/50 text-sm" data-testid="status-filter">
+            <Radio className="h-3 w-3 mr-1" /><SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="for_sale">For Sale</SelectItem>
+            <SelectItem value="coming_soon">Coming Soon</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filters.sort_by} onValueChange={(v) => updateFilter('sort_by', v)}>

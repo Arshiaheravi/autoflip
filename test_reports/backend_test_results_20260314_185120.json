@@ -1,6 +1,6 @@
 {
   "timestamp": "2026-03-14T18:51:20.572784",
-  "base_url": "https://flipbot-monitor.preview.emergentagent.com",
+  "base_url": "https://flipper-analytics.preview.emergentagent.com",
   "summary": {
     "total_tests": 35,
     "passed": 23,

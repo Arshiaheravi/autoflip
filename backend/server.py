@@ -799,6 +799,7 @@ async def get_listings(
     sort_by: str = "deal_score",
     sort_order: str = "desc",
     status: Optional[str] = None,
+    brand_type: Optional[str] = None,
 ):
     query = {"is_inactive": {"$ne": True}}
     if source:
@@ -811,6 +812,13 @@ async def get_listings(
         query["title"] = {"$regex": search, "$options": "i"}
     if status:
         query["status"] = status
+    if brand_type:
+        if brand_type == "salvage":
+            query["brand"] = {"$regex": "SALVAGE", "$options": "i"}
+        elif brand_type == "clean":
+            query["brand"] = {"$regex": "CLEAN", "$options": "i"}
+        elif brand_type == "rebuilt":
+            query["brand"] = {"$regex": "REBUILT", "$options": "i"}
 
     listings = await db.listings.find(query, {"_id": 0}).to_list(500)
 
