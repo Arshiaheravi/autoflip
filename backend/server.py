@@ -35,67 +35,510 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-# ─── Repair cost map ───
-REPAIR_COST_MAP = {
-    "LEFT REAR": [1800, 3500],
-    "RIGHT REAR": [1800, 3500],
-    "REAR": [1800, 3500],
-    "FRONT": [2500, 5500],
-    "RIGHT FRONT": [2500, 5500],
-    "LEFT FRONT": [2500, 5500],
-    "FRONT END": [2500, 5500],
-    "RIGHT DOORS": [1500, 3000],
-    "LEFT DOORS": [1500, 3000],
-    "DOORS": [1500, 3000],
-    "ROLLOVER": [5000, 14000],
-    "FIRE": [3500, 10000],
-    "FLOOD": [3500, 10000],
+# ─── AI Damage Detection ───
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+import base64
+
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+async def detect_damage_from_photo(photo_url: str) -> dict:
+    """Use GPT-4o vision to analyze a car photo and detect damage type + severity."""
+    if not EMERGENT_LLM_KEY or not photo_url:
+        return {"damage": "", "severity": "unknown", "confidence": 0}
+    try:
+        async with httpx.AsyncClient(timeout=15, headers=HEADERS, follow_redirects=True) as http:
+            resp = await http.get(photo_url)
+            if resp.status_code != 200:
+                return {"damage": "", "severity": "unknown", "confidence": 0}
+            img_bytes = resp.content
+            img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"damage-detect-{uuid.uuid4()}",
+            system_message=(
+                "You are an expert automotive damage assessor for insurance and salvage vehicles. "
+                "Analyze the car photo and respond ONLY with a JSON object (no markdown, no explanation) with these fields:\n"
+                '{"damage_type": "FRONT|REAR|LEFT FRONT|RIGHT FRONT|LEFT REAR|RIGHT REAR|LEFT DOORS|RIGHT DOORS|ROLLOVER|FIRE|FLOOD|ROOF|UNDERCARRIAGE|NONE", '
+                '"severity": "minor|moderate|severe|total", '
+                '"confidence": 0.0-1.0, '
+                '"details": "brief description of visible damage"}\n'
+                "If the car looks clean with no visible damage, use damage_type=NONE and severity=minor."
+            )
+        ).with_model("openai", "gpt-4o")
+
+        image_content = ImageContent(image_base64=img_b64)
+        user_msg = UserMessage(
+            text="Analyze this vehicle photo. Identify the primary damage area and severity. Return only the JSON.",
+            file_contents=[image_content]
+        )
+        response_text = await chat.send_message(user_msg)
+        # Parse JSON from response
+        import json
+        clean = response_text.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
+            clean = clean.rsplit("```", 1)[0]
+        result = json.loads(clean)
+        logger.info(f"  AI damage detection: {result.get('damage_type')} ({result.get('severity')}) conf={result.get('confidence')}")
+        return {
+            "damage": result.get("damage_type", ""),
+            "severity": result.get("severity", "unknown"),
+            "confidence": result.get("confidence", 0),
+            "details": result.get("details", ""),
+        }
+    except Exception as e:
+        logger.warning(f"  AI damage detection failed: {e}")
+        return {"damage": "", "severity": "unknown", "confidence": 0}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENHANCED CALCULATION ENGINE v2.0
+# All factors: year, make, model, trim, body type, mileage, color,
+# salvage/clean title, damage type + severity, Ontario fees,
+# salvage-to-rebuilt conversion costs
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── MSRP Reference Data (Canadian $, approximate new base MSRP) ───
+MSRP_DATA = {
+    # Japanese
+    "civic": 30000, "corolla": 28000, "camry": 35000, "accord": 40000,
+    "cr-v": 38000, "crv": 38000, "rav4": 38000, "rav-4": 38000,
+    "highlander": 48000, "tacoma": 45000, "tundra": 55000, "4runner": 52000,
+    "land cruiser": 75000, "landcruiser": 75000, "prius": 36000,
+    "sienna": 48000, "forester": 38000, "outback": 40000, "impreza": 30000,
+    "wrx": 38000, "crosstrek": 34000, "mazda3": 28000, "cx-5": 36000, "cx5": 36000,
+    "cx-30": 30000, "cx-50": 42000, "cx-90": 50000,
+    "rogue": 36000, "pathfinder": 46000, "sentra": 24000, "altima": 34000,
+    "frontier": 42000, "murano": 44000,
+    # Korean
+    "elantra": 26000, "sonata": 34000, "tucson": 36000, "santa fe": 42000,
+    "palisade": 52000, "kona": 30000, "ioniq": 45000,
+    "forte": 25000, "k5": 34000, "sportage": 36000, "sorento": 42000,
+    "telluride": 52000, "seltos": 30000, "carnival": 45000, "niro": 35000,
+    # American
+    "f150": 52000, "f-150": 52000, "f250": 62000, "f-250": 62000,
+    "escape": 36000, "edge": 42000, "explorer": 48000, "bronco": 48000,
+    "mustang": 38000, "ranger": 42000, "maverick": 32000,
+    "silverado": 52000, "equinox": 38000, "traverse": 44000, "blazer": 42000,
+    "colorado": 40000, "tahoe": 65000, "suburban": 70000,
+    "trax": 28000, "malibu": 30000,
+    "sierra": 55000, "terrain": 38000, "acadia": 44000, "yukon": 68000,
+    "ram": 52000, "ram 1500": 52000, "ram 2500": 60000,
+    "wrangler": 48000, "grand cherokee": 55000, "cherokee": 42000,
+    "gladiator": 50000, "compass": 36000,
+    "challenger": 42000, "charger": 42000, "durango": 48000,
+    # European
+    "3 series": 52000, "5 series": 68000, "x1": 46000, "x3": 52000, "x5": 72000,
+    "c-class": 52000, "e-class": 70000, "glc": 55000, "gle": 70000,
+    "a3": 40000, "a4": 48000, "q3": 42000, "q5": 50000, "q7": 65000,
+    "golf": 32000, "jetta": 28000, "tiguan": 36000, "atlas": 44000, "taos": 32000,
+    # Luxury
+    "rx350": 60000, "rx": 60000, "nx": 48000, "es": 50000, "is": 45000,
+    "rdx": 48000, "mdx": 58000, "tlx": 48000,
+    "xt4": 42000, "xt5": 52000, "xt6": 58000, "escalade": 85000,
+    "model 3": 50000, "model y": 55000, "model s": 95000, "model x": 100000,
+    # Rec vehicles / powersports
+    "sidewinder": 22000, "ski doo": 18000, "ski-doo": 18000, "backcountry": 20000,
+    "cooper": 32000, "mini": 32000,
 }
-DEFAULT_REPAIR = [500, 1500]  # Clean/no damage - minor reconditioning
-SAFETY_INSPECTION = 100
 
-def get_repair_range(damage_text: str) -> list:
+# ─── Brand Value Retention Multiplier ───
+# How well does this brand hold resale value vs average? (1.0 = average)
+BRAND_RETENTION = {
+    "toyota": 1.18, "lexus": 1.22, "honda": 1.14, "acura": 1.08,
+    "subaru": 1.12, "mazda": 1.06, "porsche": 1.25,
+    "jeep": 1.08, "ram": 1.05, "gmc": 1.02, "ford": 0.98,
+    "chevrolet": 0.92, "dodge": 0.88, "chrysler": 0.82,
+    "hyundai": 0.96, "kia": 0.94, "nissan": 0.90, "mitsubishi": 0.82,
+    "bmw": 0.92, "mercedes": 0.90, "audi": 0.88,
+    "volkswagen": 0.88, "volkswagon": 0.88, "volvo": 0.90,
+    "tesla": 1.05, "cadillac": 0.85, "buick": 0.82,
+    "lincoln": 0.82, "infiniti": 0.80, "genesis": 0.88,
+    "fiat": 0.68, "jaguar": 0.70, "land rover": 0.72,
+    "yamaha": 0.85, "ski-doo": 0.80, "mini": 0.78,
+}
+
+# ─── Body Type Demand Multiplier (Ontario market) ───
+BODY_TYPE_KEYWORDS = {
+    1.30: ["f150", "f-150", "f250", "f-250", "sierra", "silverado", "ram 1500", "ram 2500", "tundra", "tacoma", "ranger", "frontier", "colorado", "gladiator", "maverick"],
+    1.20: ["wrangler", "4runner", "land cruiser", "landcruiser", "bronco"],
+    1.15: ["rav4", "rav-4", "crv", "cr-v", "forester", "rogue", "escape", "equinox", "sportage", "tucson", "cx-5", "cx5", "crosstrek", "seltos", "kona", "taos", "cx-30"],
+    1.12: ["highlander", "grand cherokee", "palisade", "telluride", "explorer", "traverse", "pathfinder", "santa fe", "sorento", "tahoe", "suburban", "yukon", "4 runner"],
+    1.08: ["hybrid", "plug in", "plug-in", "hev", "phev"],
+    1.05: ["sienna", "odyssey", "carnival", "van", "promaster", "transit"],
+    0.95: ["sedan", "civic", "corolla", "sentra", "elantra", "forte", "accent", "jetta", "mazda3"],
+    0.90: ["coupe", "convertible"],
+}
+
+# ─── Trim Level Multiplier ───
+TRIM_TIERS = {
+    1.25: ["limited", "platinum", "calligraphy", "ultimate", "denali", "king ranch", "high country", "pinnacle"],
+    1.15: ["lariat", "sport", "gt", "rs", "performance", "st", "type r", "type-r", "trd pro", "trail boss", "rubicon", "sahara", "overland"],
+    1.10: ["se", "sel", "xlt", "ex", "ex-l", "touring", "preferred", "premium", "awd", "4x4", "all wheel"],
+    1.05: ["le", "xle", "sx", "lx", "base"],
+}
+
+# ─── Color Value Multiplier ───
+# Ontario market: neutral colors sell faster and for more
+COLOR_MULTIPLIER = {
+    "white": 1.04, "black": 1.03, "silver": 1.02, "grey": 1.02, "gray": 1.02,
+    "blue": 1.00, "red": 0.99, "dark blue": 1.01, "dark grey": 1.02,
+    "brown": 0.95, "beige": 0.94, "gold": 0.93, "orange": 0.93,
+    "green": 0.93, "yellow": 0.91, "purple": 0.90, "pink": 0.88,
+}
+
+# ─── Depreciation Curve (% of MSRP retained by age) ───
+# Based on Canadian Black Book / industry averages
+DEPRECIATION_CURVE = {
+    0: 1.00,   # New
+    1: 0.82,   # 1 year old — biggest drop
+    2: 0.72,
+    3: 0.63,
+    4: 0.55,
+    5: 0.48,
+    6: 0.42,
+    7: 0.37,
+    8: 0.32,
+    9: 0.28,
+    10: 0.25,
+    11: 0.22,
+    12: 0.19,
+    13: 0.17,
+    14: 0.15,
+    15: 0.13,
+    16: 0.11,
+    17: 0.10,
+    18: 0.09,
+    19: 0.08,
+    20: 0.07,
+}
+
+# ─── Repair Cost Map (Ontario body shop rates ~$110-130/hr) ───
+# [low, high] in CAD — includes parts + labour estimates
+REPAIR_COST_MAP = {
+    "FRONT":          [3000, 6500],
+    "FRONT END":      [3000, 6500],
+    "LEFT FRONT":     [2800, 6000],
+    "RIGHT FRONT":    [2800, 6000],
+    "REAR":           [2000, 4500],
+    "LEFT REAR":      [2000, 4500],
+    "RIGHT REAR":     [2000, 4500],
+    "LEFT DOORS":     [1500, 3500],
+    "RIGHT DOORS":    [1500, 3500],
+    "DOORS":          [1500, 3500],
+    "LEFT SIDE":      [2000, 4500],
+    "RIGHT SIDE":     [2000, 4500],
+    "ROOF":           [2500, 6000],
+    "UNDERCARRIAGE":  [3000, 7000],
+    "ROLLOVER":       [6000, 16000],
+    "FIRE":           [4000, 12000],
+    "FLOOD":          [4000, 12000],
+}
+DEFAULT_REPAIR = [500, 1500]
+
+# Ontario fixed costs
+SAFETY_INSPECTION_COST = 100  # Mandatory safety standards certificate
+STRUCTURAL_INSPECTION_COST = 400  # Required for salvage → rebuilt
+VIN_VERIFICATION_COST = 75
+APPRAISAL_FEE = 150
+OMVIC_FEE = 22
+MTO_TRANSFER_FEE = 32
+REBUILT_TITLE_PROCESS = STRUCTURAL_INSPECTION_COST + VIN_VERIFICATION_COST + APPRAISAL_FEE  # ~$625
+
+
+def _find_msrp(title_lower: str) -> float:
+    """Find the closest MSRP match from the title."""
+    best_match = None
+    best_len = 0
+    for model, msrp in MSRP_DATA.items():
+        if model in title_lower and len(model) > best_len:
+            best_match = msrp
+            best_len = len(model)
+    return best_match
+
+
+def _get_brand(title_lower: str) -> tuple:
+    """Extract brand name and its retention multiplier."""
+    for brand, mult in BRAND_RETENTION.items():
+        if brand in title_lower:
+            return brand, mult
+    return "unknown", 0.90
+
+
+def _get_body_type_mult(title_lower: str) -> float:
+    """Get body type demand multiplier."""
+    for mult, keywords in BODY_TYPE_KEYWORDS.items():
+        if any(k in title_lower for k in keywords):
+            return mult
+    return 1.0
+
+
+def _get_trim_mult(title_lower: str) -> float:
+    """Get trim level multiplier."""
+    for mult, keywords in TRIM_TIERS.items():
+        if any(k in title_lower for k in keywords):
+            return mult
+    return 1.0
+
+
+def _get_color_mult(colour: str) -> float:
+    """Get color-based value multiplier."""
+    if not colour:
+        return 1.0
+    c = colour.lower().strip()
+    for color_name, mult in COLOR_MULTIPLIER.items():
+        if color_name in c:
+            return mult
+    return 0.97  # Unknown/unusual color — slight discount
+
+
+def _get_depreciation(age: int) -> float:
+    """Get depreciation factor from curve. Interpolates for ages > 20."""
+    if age <= 0:
+        return 1.0
+    if age in DEPRECIATION_CURVE:
+        return DEPRECIATION_CURVE[age]
+    if age > 20:
+        return max(0.04, 0.07 - (age - 20) * 0.005)
+    return 0.07
+
+
+def _get_mileage_adjustment(mileage: int, age: int) -> float:
+    """
+    Mileage-based adjustment using a continuous curve.
+    Average Ontario driving: ~18,000 km/year.
+    Returns a multiplier (e.g., 0.85 for high mileage, 1.08 for low).
+    """
+    if not mileage or mileage <= 0:
+        return 1.0
+    avg_km_year = 18000
+    expected = max(avg_km_year, age * avg_km_year)
+    ratio = mileage / expected
+
+    if ratio <= 0.5:
+        return 1.08   # Exceptionally low mileage
+    elif ratio <= 0.7:
+        return 1.05
+    elif ratio <= 0.9:
+        return 1.02
+    elif ratio <= 1.1:
+        return 1.00   # Average
+    elif ratio <= 1.3:
+        return 0.96
+    elif ratio <= 1.5:
+        return 0.92
+    elif ratio <= 1.8:
+        return 0.87
+    elif ratio <= 2.0:
+        return 0.82
+    else:
+        return max(0.70, 0.82 - (ratio - 2.0) * 0.06)
+
+
+def estimate_market_value(title: str, year: int, mileage: int = None,
+                          colour: str = "", brand_status: str = "") -> dict:
+    """
+    Estimate Ontario retail market value using all available factors.
+    Returns dict with value breakdown for transparency.
+    """
+    current_year = datetime.now().year
+    age = max(0, current_year - year)
+    title_lower = title.lower()
+
+    # 1. MSRP baseline
+    msrp = _find_msrp(title_lower)
+    msrp_source = "model_match"
+    if not msrp:
+        # Fallback: estimate MSRP from brand + generic body type
+        _, brand_mult = _get_brand(title_lower)
+        body_mult = _get_body_type_mult(title_lower)
+        msrp = 35000 * brand_mult * body_mult
+        msrp_source = "estimated"
+
+    # 2. Depreciation
+    dep_factor = _get_depreciation(age)
+
+    # 3. Brand retention
+    brand_name, brand_mult = _get_brand(title_lower)
+
+    # 4. Body type demand
+    body_mult = _get_body_type_mult(title_lower)
+
+    # 5. Trim adjustment
+    trim_mult = _get_trim_mult(title_lower)
+
+    # 6. Color adjustment
+    color_mult = _get_color_mult(colour)
+
+    # 7. Mileage adjustment
+    mileage_mult = _get_mileage_adjustment(mileage, age) if mileage else 1.0
+
+    # Calculate clean title market value
+    clean_value = msrp * dep_factor * brand_mult * body_mult * trim_mult * color_mult * mileage_mult
+
+    # 8. Title status adjustment
+    is_salvage = brand_status and "SALVAGE" in brand_status.upper()
+    is_rebuilt = brand_status and "REBUILT" in brand_status.upper()
+    title_mult = 1.0
+    title_note = "clean_title"
+    if is_salvage:
+        title_mult = 0.55  # Salvage titles sell for ~55% of clean equivalent
+        title_note = "salvage_title"
+    elif is_rebuilt:
+        title_mult = 0.75  # Rebuilt titles sell for ~75% of clean equivalent
+        title_note = "rebuilt_title"
+
+    final_value = round(clean_value * title_mult, 0)
+
+    # Floor value — no car is worth less than scrap
+    final_value = max(final_value, 800)
+
+    return {
+        "market_value": final_value,
+        "msrp": round(msrp, 0),
+        "msrp_source": msrp_source,
+        "depreciation": round(dep_factor, 3),
+        "brand": brand_name,
+        "brand_mult": brand_mult,
+        "body_mult": body_mult,
+        "trim_mult": trim_mult,
+        "color_mult": color_mult,
+        "mileage_mult": round(mileage_mult, 3),
+        "title_status": title_note,
+        "title_mult": title_mult,
+        "age": age,
+    }
+
+
+def get_repair_range(damage_text: str, severity: str = "", is_salvage: bool = False) -> tuple:
+    """
+    Estimate repair cost range based on damage type, severity, and title status.
+    Returns (low, high, breakdown_dict).
+    """
+    base_low = 0
+    base_high = 0
+    damage_source = "listed"
+
     if not damage_text or damage_text.strip() == "" or damage_text.upper() == "NONE":
-        return [DEFAULT_REPAIR[0] + SAFETY_INSPECTION, DEFAULT_REPAIR[1] + SAFETY_INSPECTION]
-    d = damage_text.upper().strip()
-    # Direct match first
-    for key, val in REPAIR_COST_MAP.items():
-        if key in d:
-            return [val[0] + SAFETY_INSPECTION, val[1] + SAFETY_INSPECTION]
-    # Fuzzy matches
-    if "ROLL" in d:  # ROLLED, ROLLOVER, ROLL OVER
-        return [5000 + SAFETY_INSPECTION, 14000 + SAFETY_INSPECTION]
-    if "FIRE" in d or "BURN" in d:
-        return [3500 + SAFETY_INSPECTION, 10000 + SAFETY_INSPECTION]
-    if "FLOOD" in d or "WATER" in d:
-        return [3500 + SAFETY_INSPECTION, 10000 + SAFETY_INSPECTION]
-    if "HIT" in d or "IMPACT" in d or "COLLISION" in d:
-        return [2000 + SAFETY_INSPECTION, 5000 + SAFETY_INSPECTION]
-    if "RUST" in d:
-        return [1500 + SAFETY_INSPECTION, 4000 + SAFETY_INSPECTION]
-    if "REAR" in d:
-        return [1800 + SAFETY_INSPECTION, 3500 + SAFETY_INSPECTION]
-    if "SIDE" in d or "DOOR" in d:
-        return [1500 + SAFETY_INSPECTION, 3000 + SAFETY_INSPECTION]
-    # Unknown damage - moderate estimate
-    return [2000 + SAFETY_INSPECTION, 5000 + SAFETY_INSPECTION]
+        base_low, base_high = DEFAULT_REPAIR
+        damage_source = "none"
+    else:
+        d = damage_text.upper().strip()
+        matched = False
+        # Direct match
+        for key, val in REPAIR_COST_MAP.items():
+            if key in d:
+                base_low, base_high = val
+                matched = True
+                break
+        if not matched:
+            # Fuzzy matches
+            if "ROLL" in d:
+                base_low, base_high = 6000, 16000
+            elif "FIRE" in d or "BURN" in d:
+                base_low, base_high = 4000, 12000
+            elif "FLOOD" in d or "WATER" in d:
+                base_low, base_high = 4000, 12000
+            elif "HIT" in d or "IMPACT" in d or "COLLISION" in d:
+                base_low, base_high = 2500, 5500
+            elif "RUST" in d:
+                base_low, base_high = 1500, 4500
+            elif "REAR" in d:
+                base_low, base_high = 2000, 4500
+            elif "SIDE" in d or "DOOR" in d:
+                base_low, base_high = 1500, 3500
+            elif "ROOF" in d:
+                base_low, base_high = 2500, 6000
+            else:
+                base_low, base_high = 2000, 5000
+                damage_source = "unknown_type"
 
-def calculate_ontario_fees(purchase_price: float) -> float:
-    return purchase_price * 0.13 + 154  # HST + OMVIC $22 + MTO $32 + Safety $100
+    # Severity multiplier
+    sev_mult = 1.0
+    if severity:
+        sev = severity.lower()
+        if sev == "minor":
+            sev_mult = 0.7
+        elif sev == "moderate":
+            sev_mult = 1.0
+        elif sev == "severe":
+            sev_mult = 1.4
+        elif sev == "total":
+            sev_mult = 1.8
 
-def calc_deal_score(best_profit: float, worst_profit: float) -> tuple:
-    if worst_profit < 0:
-        score = 2 if best_profit > 0 else 1
-    elif best_profit > 4000:
-        score = 10 if best_profit > 5000 else 9
-    elif best_profit >= 2500:
-        score = 8 if best_profit > 3200 else 7
-    elif best_profit >= 1000:
-        score = 6 if best_profit > 1750 else 5
-    elif best_profit >= 0:
-        score = 4 if best_profit > 500 else 3
+    repair_low = round(base_low * sev_mult)
+    repair_high = round(base_high * sev_mult)
+
+    # Fixed costs
+    safety = SAFETY_INSPECTION_COST
+    salvage_process = REBUILT_TITLE_PROCESS if is_salvage else 0
+
+    total_low = repair_low + safety + salvage_process
+    total_high = repair_high + safety + salvage_process
+
+    breakdown = {
+        "repair_labour_parts_low": repair_low,
+        "repair_labour_parts_high": repair_high,
+        "safety_inspection": safety,
+        "salvage_to_rebuilt_cost": salvage_process,
+        "severity_applied": severity or "moderate",
+        "damage_source": damage_source,
+    }
+
+    return total_low, total_high, breakdown
+
+
+def calculate_ontario_fees(purchase_price: float, is_salvage: bool = False) -> dict:
+    """
+    Calculate all Ontario transaction fees.
+    """
+    hst = round(purchase_price * 0.13, 2)
+    fees = {
+        "hst": hst,
+        "omvic": OMVIC_FEE,
+        "mto_transfer": MTO_TRANSFER_FEE,
+        "safety_cert": SAFETY_INSPECTION_COST,
+        "total": round(hst + OMVIC_FEE + MTO_TRANSFER_FEE + SAFETY_INSPECTION_COST, 0),
+    }
+    return fees
+
+
+def calc_deal_score(best_profit: float, worst_profit: float, roi_best: float = 0) -> tuple:
+    """Enhanced deal scoring that factors in both profit amount and ROI."""
+    avg_profit = (best_profit + worst_profit) / 2
+
+    # Base score from average profit
+    if avg_profit >= 5000:
+        score = 10
+    elif avg_profit >= 4000:
+        score = 9
+    elif avg_profit >= 3000:
+        score = 8
+    elif avg_profit >= 2000:
+        score = 7
+    elif avg_profit >= 1200:
+        score = 6
+    elif avg_profit >= 500:
+        score = 5
+    elif avg_profit >= 0:
+        score = 4
+    elif avg_profit >= -500:
+        score = 3
+    elif avg_profit >= -1500:
+        score = 2
     else:
         score = 1
+
+    # ROI bonus/penalty (±1 point)
+    if roi_best and roi_best > 60:
+        score = min(10, score + 1)
+    elif roi_best and roi_best < -10:
+        score = max(1, score - 1)
+
+    # Risk penalty: if worst case is very negative
+    if worst_profit < -2000 and score > 3:
+        score = max(3, score - 1)
 
     if score >= 8:
         label = "BUY"
@@ -105,29 +548,25 @@ def calc_deal_score(best_profit: float, worst_profit: float) -> tuple:
         label = "SKIP"
     return score, label
 
+
 def parse_price(text: str) -> Optional[float]:
     if not text:
         return None
     text_lower = text.lower()
     if "####" in text or "on sale" in text_lower or "call" in text_lower:
         return None
-    # Isolate the price portion (before "AS IS", "PLUS HST", etc.)
     price_part = text
     for split_word in ["AS IS", "PLUS", "Plus", "plus"]:
         if split_word in price_part:
             price_part = price_part.split(split_word)[0]
     price_part = price_part.strip()
-    # Handle European format like "$29.995.00" -> 29995
-    # Count dots: if more than one dot, treat dots as thousand separators
     dollar_match = re.search(r'\$([\d.,]+)', price_part)
     if dollar_match:
         num_str = dollar_match.group(1)
         dot_count = num_str.count('.')
         if dot_count > 1:
-            # Format like "$29.995.00" - dots as thousands, last group is cents
             parts = num_str.split('.')
             if len(parts[-1]) == 2:
-                # Last part is cents
                 whole = ''.join(parts[:-1])
                 num_str = whole + '.' + parts[-1]
             else:
@@ -144,6 +583,7 @@ def parse_price(text: str) -> Optional[float]:
             pass
     return None
 
+
 def parse_mileage(text: str) -> Optional[int]:
     if not text:
         return None
@@ -153,90 +593,6 @@ def parse_mileage(text: str) -> Optional[int]:
         return int(match.group(1))
     return None
 
-# ─── Market Value Estimation ───
-# Since AutoTrader/Kijiji have anti-bot protection, we use a model-based estimation
-# that factors in year depreciation + vehicle type + Ontario market patterns
-VEHICLE_BASE_VALUES = {
-    "toyota": 1.15, "honda": 1.12, "lexus": 1.20, "subaru": 1.10,
-    "mazda": 1.05, "hyundai": 0.95, "kia": 0.93, "nissan": 0.92,
-    "ford": 0.95, "chevrolet": 0.88, "gmc": 0.95, "dodge": 0.85, "ram": 0.95,
-    "jeep": 1.05, "bmw": 1.00, "mercedes": 1.05, "audi": 1.00,
-    "volkswagen": 0.90, "volkswagon": 0.90, "acura": 1.05, "cadillac": 0.90,
-    "tesla": 1.10, "fiat": 0.70, "jaguar": 0.75, "yamaha": 0.85,
-}
-
-def estimate_market_value(title: str, year: int, mileage: int = None) -> Optional[float]:
-    """Estimate Ontario market value based on vehicle attributes"""
-    current_year = datetime.now().year
-    age = current_year - year
-    if age < 0:
-        age = 0
-
-    # Base value by age tier
-    if age <= 1:
-        base = 38000
-    elif age <= 3:
-        base = 28000
-    elif age <= 5:
-        base = 20000
-    elif age <= 8:
-        base = 14000
-    elif age <= 12:
-        base = 9000
-    elif age <= 15:
-        base = 5500
-    else:
-        base = 3500
-
-    # Make multiplier
-    title_lower = title.lower()
-    make_mult = 1.0
-    for make, mult in VEHICLE_BASE_VALUES.items():
-        if make in title_lower:
-            make_mult = mult
-            break
-
-    # Type multiplier
-    type_mult = 1.0
-    if any(k in title_lower for k in ["f150", "f-150", "sierra", "silverado", "ram", "tundra"]):
-        type_mult = 1.25  # Trucks hold value
-    elif any(k in title_lower for k in ["rav4", "rav-4", "crv", "cr-v", "forester", "rogue", "escape", "equinox", "sportage", "tucson", "cx-5", "cx5"]):
-        type_mult = 1.15  # SUVs/CUVs popular
-    elif any(k in title_lower for k in ["wrangler", "4runner", "land cruiser", "landcruiser"]):
-        type_mult = 1.35  # Off-road premium
-    elif any(k in title_lower for k in ["prius", "hybrid", "electric", "ev"]):
-        type_mult = 1.10
-    elif any(k in title_lower for k in ["sienna", "odyssey", "promaster", "transit", "van"]):
-        type_mult = 1.05
-    elif any(k in title_lower for k in ["sedan", "civic", "corolla", "sentra", "accent", "forte", "elantra"]):
-        type_mult = 0.95
-
-    # Trim multiplier
-    trim_mult = 1.0
-    if any(k in title_lower for k in ["limited", "platinum", "calligraphy", "ultimate"]):
-        trim_mult = 1.20
-    elif any(k in title_lower for k in ["lariat", "sport", "gt", "rs", "performance"]):
-        trim_mult = 1.10
-    elif any(k in title_lower for k in ["xlt", "ex", "touring", "preferred"]):
-        trim_mult = 1.05
-
-    value = base * make_mult * type_mult * trim_mult
-
-    # Mileage adjustment
-    if mileage and mileage > 0:
-        avg_km_per_year = 18000
-        expected_km = age * avg_km_per_year
-        if expected_km == 0:
-            expected_km = 18000
-        km_ratio = mileage / expected_km
-        if km_ratio > 1.3:
-            value *= 0.88  # High mileage penalty
-        elif km_ratio > 1.1:
-            value *= 0.94
-        elif km_ratio < 0.7:
-            value *= 1.06  # Low mileage premium
-
-    return round(value, 0)
 
 def extract_year(title: str) -> Optional[int]:
     match = re.search(r'(19|20)\d{2}', title)
@@ -595,6 +951,7 @@ async def run_full_scrape():
     # Process and store listings
     new_count = 0
     updated_count = 0
+    ai_detected_count = 0
     for raw in all_listings:
         url = raw.get("url", "")
         if not url:
@@ -606,36 +963,60 @@ async def run_full_scrape():
         price = raw.get("price")
         damage = raw.get("damage", "")
         brand = raw.get("brand", "")
+        colour = raw.get("colour", "")
+        is_salvage = brand and "SALVAGE" in brand.upper()
 
-        # Market value
+        # AI Damage Detection: if no damage listed and photos exist, use vision AI
+        ai_damage_result = None
+        severity = ""
+        if (not damage or damage.strip() == "") and raw.get("photo"):
+            try:
+                ai_damage_result = await detect_damage_from_photo(raw["photo"])
+                if ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]:
+                    damage = ai_damage_result["damage"]
+                    severity = ai_damage_result.get("severity", "")
+                    ai_detected_count += 1
+                    logger.info(f"  AI detected damage for {raw.get('title','')}: {damage} ({severity})")
+            except Exception as e:
+                logger.warning(f"  AI damage detection skipped: {e}")
+
+        # Market value (enhanced — uses all factors)
         market_value = None
+        mv_breakdown = None
         if year and raw.get("title"):
-            market_value = estimate_market_value(raw["title"], year, mileage)
-            # Salvage title discount
-            if brand and ("SALVAGE" in brand.upper()):
-                market_value = round(market_value * 0.75, 0)
+            mv_result = estimate_market_value(
+                raw["title"], year, mileage,
+                colour=colour, brand_status=brand
+            )
+            market_value = mv_result["market_value"]
+            mv_breakdown = mv_result
 
-        # Repair cost
-        repair_low, repair_high = get_repair_range(damage)
+        # Repair cost (enhanced — uses severity + salvage process costs)
+        repair_low, repair_high, repair_breakdown = get_repair_range(
+            damage, severity=severity, is_salvage=is_salvage
+        )
 
-        # Profit calc
+        # Ontario fees
         profit_best = None
         profit_worst = None
         roi_best = None
         roi_worst = None
         fees = None
+        fees_breakdown = None
         if price and price > 0 and market_value:
-            fees = round(calculate_ontario_fees(price), 0)
+            fees_result = calculate_ontario_fees(price, is_salvage=is_salvage)
+            fees = fees_result["total"]
+            fees_breakdown = fees_result
             profit_best = round(market_value - price - repair_low - fees, 0)
             profit_worst = round(market_value - price - repair_high - fees, 0)
             roi_best = round((profit_best / price) * 100, 1) if price > 0 else None
             roi_worst = round((profit_worst / price) * 100, 1) if price > 0 else None
 
-        # Deal score
+        # Deal score (enhanced — factors ROI)
         score = None
         score_label = None
         if profit_best is not None and profit_worst is not None:
-            score, score_label = calc_deal_score(profit_best, profit_worst)
+            score, score_label = calc_deal_score(profit_best, profit_worst, roi_best or 0)
 
         listing_doc = {
             "url": url,
@@ -644,7 +1025,7 @@ async def run_full_scrape():
             "price": price,
             "price_raw": raw.get("price_raw", ""),
             "status": raw.get("status", "for_sale"),
-            "colour": raw.get("colour", ""),
+            "colour": colour,
             "mileage": mileage,
             "damage": damage,
             "brand": brand,
@@ -663,6 +1044,13 @@ async def run_full_scrape():
             "deal_score": score,
             "deal_label": score_label,
             "last_scraped": now,
+            # New v2 fields for transparency
+            "calc_version": "v2.0",
+            "mv_breakdown": mv_breakdown,
+            "repair_breakdown": repair_breakdown,
+            "fees_breakdown": fees_breakdown,
+            "ai_damage_detected": ai_damage_result is not None and ai_damage_result.get("confidence", 0) >= 0.4,
+            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result else "",
         }
 
         # Upsert by URL
@@ -723,8 +1111,8 @@ async def run_full_scrape():
         }},
         upsert=True
     )
-    logger.info(f"=== Scrape complete: {new_count} new, {updated_count} updated, {len(all_listings)} total ===")
-    return {"new": new_count, "updated": updated_count, "total": len(all_listings)}
+    logger.info(f"=== Scrape complete: {new_count} new, {updated_count} updated, {ai_detected_count} AI damage detections, {len(all_listings)} total ===")
+    return {"new": new_count, "updated": updated_count, "total": len(all_listings), "ai_detections": ai_detected_count}
 
 
 # ─── Background scheduler ───
@@ -932,6 +1320,149 @@ async def update_settings(data: dict):
         await db.user_settings.update_one({"id": "global"}, {"$set": update}, upsert=True)
     settings = await db.user_settings.find_one({"id": "global"}, {"_id": 0})
     return settings
+
+@api_router.post("/recalculate")
+async def recalculate_all():
+    """Recalculate market value, repair cost, and profit for all existing listings using v2 engine."""
+    listings = await db.listings.find({"is_inactive": {"$ne": True}}, {"_id": 0}).to_list(500)
+    updated = 0
+    ai_count = 0
+    for l in listings:
+        year = l.get("year")
+        mileage = l.get("mileage")
+        price = l.get("price")
+        damage = l.get("damage", "")
+        brand = l.get("brand", "")
+        colour = l.get("colour", "")
+        is_salvage = brand and "SALVAGE" in brand.upper()
+
+        # AI damage detection if no damage and photos exist
+        severity = ""
+        ai_damage_result = None
+        if (not damage or damage.strip() == "") and l.get("photo"):
+            try:
+                ai_damage_result = await detect_damage_from_photo(l["photo"])
+                if ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]:
+                    damage = ai_damage_result["damage"]
+                    severity = ai_damage_result.get("severity", "")
+                    ai_count += 1
+            except Exception:
+                pass
+
+        market_value = None
+        mv_breakdown = None
+        if year and l.get("title"):
+            mv_result = estimate_market_value(l["title"], year, mileage, colour=colour, brand_status=brand)
+            market_value = mv_result["market_value"]
+            mv_breakdown = mv_result
+
+        repair_low, repair_high, repair_breakdown = get_repair_range(damage, severity=severity, is_salvage=is_salvage)
+
+        profit_best = profit_worst = roi_best = roi_worst = fees = None
+        fees_breakdown = None
+        if price and price > 0 and market_value:
+            fees_result = calculate_ontario_fees(price, is_salvage=is_salvage)
+            fees = fees_result["total"]
+            fees_breakdown = fees_result
+            profit_best = round(market_value - price - repair_low - fees, 0)
+            profit_worst = round(market_value - price - repair_high - fees, 0)
+            roi_best = round((profit_best / price) * 100, 1) if price > 0 else None
+            roi_worst = round((profit_worst / price) * 100, 1) if price > 0 else None
+
+        score = score_label = None
+        if profit_best is not None and profit_worst is not None:
+            score, score_label = calc_deal_score(profit_best, profit_worst, roi_best or 0)
+
+        update_doc = {
+            "damage": damage,
+            "market_value": market_value,
+            "repair_low": repair_low, "repair_high": repair_high,
+            "fees": fees,
+            "profit_best": profit_best, "profit_worst": profit_worst,
+            "roi_best": roi_best, "roi_worst": roi_worst,
+            "deal_score": score, "deal_label": score_label,
+            "calc_version": "v2.0",
+            "mv_breakdown": mv_breakdown,
+            "repair_breakdown": repair_breakdown,
+            "fees_breakdown": fees_breakdown,
+            "ai_damage_detected": ai_damage_result is not None and ai_damage_result.get("confidence", 0) >= 0.4,
+            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result else "",
+        }
+        await db.listings.update_one({"url": l["url"]}, {"$set": update_doc})
+        updated += 1
+
+    return {"updated": updated, "ai_damage_detections": ai_count}
+
+@api_router.get("/calc-methodology")
+async def get_calc_methodology():
+    """Return the complete calculation methodology documentation."""
+    return {
+        "version": "2.0",
+        "engine": "AutoFlip Enhanced Calculation Engine v2.0",
+        "market_value": {
+            "description": "Multi-factor market value estimation for Ontario, Canada",
+            "factors": [
+                {"name": "MSRP Baseline", "description": "Looks up the vehicle's approximate new MSRP from a database of 100+ models. If no exact match, estimates from brand + body type."},
+                {"name": "Depreciation Curve", "description": "Applies a non-linear depreciation curve based on Canadian Black Book industry data. Year 1 loses ~18%, then gradual decline. 5-year-old car retains ~48% of MSRP."},
+                {"name": "Brand Retention", "description": "Each brand has a retention multiplier. Toyota (1.18) and Lexus (1.22) hold value best. Dodge (0.88) and Fiat (0.68) lose value fastest."},
+                {"name": "Body Type Demand", "description": "Ontario market demand: trucks (1.30x), off-road SUVs (1.20x), compact SUVs (1.15x), sedans (0.95x). Trucks and SUVs command premiums in Canadian winters."},
+                {"name": "Trim Level", "description": "Higher trims add value: Limited/Platinum (1.25x), Sport/GT (1.15x), XLT/EX (1.10x), Base (1.05x)."},
+                {"name": "Color Premium", "description": "Neutral colors sell faster: White (+4%), Black (+3%), Silver/Grey (+2%). Unusual colors (yellow -9%, pink -12%) are harder to sell."},
+                {"name": "Mileage Adjustment", "description": "Uses Ontario average of 18,000 km/year. Cars with <50% expected mileage get +8%. Cars with >200% expected get -18% or more. Continuous curve, not step function."},
+                {"name": "Title Status", "description": "Salvage title: 55% of clean value (buyers pay less for salvage history). Rebuilt title: 75% of clean value. Clean: full value."},
+            ],
+            "formula": "Market Value = MSRP × Depreciation × Brand × BodyType × Trim × Color × Mileage × TitleStatus",
+        },
+        "repair_cost": {
+            "description": "Damage-specific repair cost estimation using Ontario body shop rates ($110-130/hr)",
+            "factors": [
+                {"name": "Damage Zone", "description": "16 specific damage zones mapped (Front, Rear, Left/Right Front, Left/Right Rear, Doors, Rollover, Fire, Flood, Roof, Undercarriage). Each has a research-based low-high cost range."},
+                {"name": "Severity Multiplier", "description": "AI vision or description analysis determines severity: Minor (0.7x), Moderate (1.0x), Severe (1.4x), Total (1.8x)."},
+                {"name": "Salvage-to-Rebuilt Process", "description": "Salvage vehicles require: Structural Inspection ($400), VIN Verification ($75), Appraisal ($150) = $625 additional cost on top of repairs."},
+                {"name": "Safety Inspection", "description": "Mandatory Ontario Safety Standards Certificate: $100."},
+                {"name": "AI Damage Detection", "description": "When damage type is not listed, GPT-4o vision analyzes the car photo to identify damage zone and severity. Only used when confidence ≥ 40%."},
+            ],
+            "formula": "Total Repair = (Base Repair × Severity) + Safety ($100) + Salvage Process ($625 if salvage)",
+        },
+        "ontario_fees": {
+            "description": "All mandatory Ontario transaction fees",
+            "breakdown": [
+                {"name": "HST", "amount": "13% of purchase price", "description": "Ontario Harmonized Sales Tax"},
+                {"name": "OMVIC Fee", "amount": "$22", "description": "Ontario Motor Vehicle Industry Council registration"},
+                {"name": "MTO Transfer", "amount": "$32", "description": "Ministry of Transportation ownership transfer"},
+                {"name": "Safety Certificate", "amount": "$100", "description": "Mandatory safety inspection for resale"},
+            ],
+            "formula": "Fees = (Price × 0.13) + $22 + $32 + $100",
+        },
+        "profit_calculation": {
+            "formula": "Profit = Market Value - Purchase Price - Repair Cost - Ontario Fees",
+            "scenarios": {
+                "best_case": "Uses low repair estimate",
+                "worst_case": "Uses high repair estimate",
+            },
+        },
+        "deal_scoring": {
+            "description": "1-10 score based on average profit + ROI bonus/penalty + risk factor",
+            "scale": [
+                {"range": "8-10", "label": "BUY", "criteria": "Average profit ≥ $3,000+. Strong flip opportunity."},
+                {"range": "5-7", "label": "WATCH", "criteria": "Average profit $500-$3,000. Monitor for price drops."},
+                {"range": "1-4", "label": "SKIP", "criteria": "Average profit < $500 or negative. Risk of loss."},
+            ],
+            "adjustments": [
+                "ROI > 60%: +1 point bonus",
+                "ROI < -10%: -1 point penalty",
+                "Worst case loss > $2,000: -1 point risk penalty",
+            ],
+        },
+        "technologies": [
+            "Python/FastAPI backend with async processing",
+            "BeautifulSoup4 + httpx for web scraping",
+            "GPT-4o Vision API (via Emergent Integrations) for AI damage detection from photos",
+            "MongoDB for data persistence",
+            "Canadian Black Book-inspired depreciation curves",
+            "Ontario-specific fee schedules and market data",
+        ],
+    }
 
 # Include router + CORS
 app.include_router(api_router)

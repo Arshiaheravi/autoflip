@@ -673,7 +673,10 @@ function ListingRow({ listing, index, onClick }) {
         <div><span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${sourceColor(l.source)}`}>{sourceLabel(l.source).split(' ')[0]}</span></div>
         <div className="text-right"><span className="text-sm font-bold font-data text-primary">{hasPrice ? fmt(l.price) : l.price_raw?.substring(0, 10) || 'TBD'}</span></div>
         <div className="text-right text-xs text-muted-foreground font-data">{l.mileage ? `${fmtNum(l.mileage)} km` : '--'}</div>
-        <div><span className="text-xs text-muted-foreground">{l.damage || '--'}</span></div>
+        <div>
+          <span className="text-xs text-muted-foreground">{l.damage || '--'}</span>
+          {l.ai_damage_detected && <span className="text-[8px] ml-1 px-1 py-0.5 rounded-sm bg-blue-500/15 text-blue-400">AI</span>}
+        </div>
         <div className="text-right"><span className="text-xs font-data">{l.market_value ? fmt(l.market_value) : 'N/A'}</span></div>
         <div className="text-right"><span className="text-[11px] font-data text-muted-foreground">{fmt(l.repair_low)} – {fmt(l.repair_high)}</span></div>
         <div className="text-right">
@@ -763,11 +766,20 @@ function DetailDialog({ listing, onClose }) {
                 <h3 className="text-lg font-bold tracking-tight uppercase" style={{ fontFamily: 'Barlow Condensed' }}>Profit Analysis</h3>
                 {l.deal_label && <span className={`text-base font-bold px-3 py-1 rounded-sm border ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10 — {l.deal_label}</span>}
               </div>
+              {l.ai_damage_detected && (
+                <div className="flex items-center gap-2 p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-sm">
+                  <Eye className="h-4 w-4 text-blue-400 shrink-0" />
+                  <span className="text-xs text-blue-300">AI Vision detected damage: <strong>{l.damage}</strong> {l.ai_damage_details && `— ${l.ai_damage_details}`}</span>
+                </div>
+              )}
               <div className="bg-background/50 border border-border/30 rounded-sm p-4 space-y-2 font-data text-sm">
-                <Row label="Market Value" value={l.market_value ? fmt(l.market_value) : 'N/A'} note={l.brand?.toUpperCase().includes('SALVAGE') ? '25% salvage penalty applied' : ''} />
+                <Row label="Market Value" value={l.market_value ? fmt(l.market_value) : 'N/A'} note={l.mv_breakdown?.title_status === 'salvage_title' ? 'Salvage: 55% of clean value' : l.mv_breakdown?.title_status === 'rebuilt_title' ? 'Rebuilt: 75% of clean' : ''} />
                 <Row label="Purchase Price" value={hasPrice ? fmt(l.price) : 'TBD'} />
                 <Row label="Repair Estimate (Low)" value={fmt(l.repair_low)} dim />
                 <Row label="Repair Estimate (High)" value={fmt(l.repair_high)} dim />
+                {l.repair_breakdown?.salvage_to_rebuilt_cost > 0 && (
+                  <Row label="  Incl. Salvage→Rebuilt Process" value={fmt(l.repair_breakdown.salvage_to_rebuilt_cost)} dim note="Structural insp + VIN + Appraisal" />
+                )}
                 <Row label="Ontario Fees" value={l.fees ? fmt(l.fees) : 'N/A'} dim note="HST 13% + OMVIC $22 + MTO $32 + Safety $100" />
                 <Separator className="bg-border/30" />
                 <Row label="Best Case Profit" value={l.profit_best !== null ? fmt(l.profit_best) : 'N/A'} highlight={l.profit_best > 0} />
@@ -775,6 +787,25 @@ function DetailDialog({ listing, onClose }) {
                 <Row label="ROI (Best)" value={l.roi_best !== null ? `${l.roi_best}%` : 'N/A'} />
                 <Row label="ROI (Worst)" value={l.roi_worst !== null ? `${l.roi_worst}%` : 'N/A'} />
               </div>
+              {/* Market Value Breakdown */}
+              {l.mv_breakdown && (
+                <details className="group">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+                    <ChevronRight className="h-3 w-3 group-open:rotate-90 transition-transform" />
+                    View calculation breakdown
+                  </summary>
+                  <div className="mt-2 bg-background/50 border border-border/30 rounded-sm p-3 space-y-1.5 font-data text-[11px]">
+                    <Row label="Est. MSRP (new)" value={fmt(l.mv_breakdown.msrp)} dim note={l.mv_breakdown.msrp_source === 'model_match' ? 'Model matched' : 'Estimated'} />
+                    <Row label="Depreciation" value={`×${l.mv_breakdown.depreciation}`} dim note={`${l.mv_breakdown.age}yr old`} />
+                    <Row label="Brand Retention" value={`×${l.mv_breakdown.brand_mult}`} dim note={l.mv_breakdown.brand} />
+                    <Row label="Body Type Demand" value={`×${l.mv_breakdown.body_mult}`} dim />
+                    <Row label="Trim Level" value={`×${l.mv_breakdown.trim_mult}`} dim />
+                    <Row label="Color Premium" value={`×${l.mv_breakdown.color_mult}`} dim />
+                    <Row label="Mileage Adj." value={`×${l.mv_breakdown.mileage_mult}`} dim />
+                    <Row label="Title Status" value={`×${l.mv_breakdown.title_mult}`} dim note={l.mv_breakdown.title_status?.replace('_', ' ')} />
+                  </div>
+                </details>
+              )}
               {l.profit_worst !== null && l.profit_worst < 0 && (
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-sm">
                   <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
