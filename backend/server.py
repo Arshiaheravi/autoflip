@@ -41,46 +41,74 @@ import base64
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
-async def detect_damage_from_photo(photo_url: str) -> dict:
-    """Use GPT-4o vision to analyze a car photo and detect damage type + severity."""
-    if not EMERGENT_LLM_KEY or not photo_url:
+async def detect_damage_from_photo(photo_urls, source: str = "", brand_status: str = "") -> dict:
+    """Use GPT-4o vision to analyze multiple car photos and detect damage type + severity."""
+    if not EMERGENT_LLM_KEY:
         return {"damage": "", "severity": "unknown", "confidence": 0}
+
+    # Accept single URL or list
+    if isinstance(photo_urls, str):
+        photo_urls = [photo_urls]
+    photo_urls = [u for u in photo_urls if u][:3]  # Analyze up to 3 photos
+    if not photo_urls:
+        return {"damage": "", "severity": "unknown", "confidence": 0}
+
     try:
+        image_contents = []
         async with httpx.AsyncClient(timeout=15, headers=HEADERS, follow_redirects=True) as http:
-            resp = await http.get(photo_url)
-            if resp.status_code != 200:
-                return {"damage": "", "severity": "unknown", "confidence": 0}
-            img_bytes = resp.content
-            img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+            for url in photo_urls:
+                try:
+                    resp = await http.get(url)
+                    if resp.status_code == 200:
+                        img_b64 = base64.b64encode(resp.content).decode('utf-8')
+                        image_contents.append(ImageContent(image_base64=img_b64))
+                except Exception:
+                    continue
+
+        if not image_contents:
+            return {"damage": "", "severity": "unknown", "confidence": 0}
+
+        is_salvage_lot = source in ("cathcart_rebuilders", "picnsave") or (brand_status and "SALVAGE" in brand_status.upper())
+        context_note = ""
+        if is_salvage_lot:
+            context_note = (
+                "CRITICAL CONTEXT: This vehicle is listed on a SALVAGE / REBUILDABLE car lot. "
+                "It almost certainly has damage — it would not be on a salvage lot otherwise. "
+                "Look very carefully for: dents, misaligned panels, scratches, paint damage, "
+                "cracked bumpers, broken lights, rust, frame damage, missing parts, "
+                "flood marks, fire damage, broken glass, airbag deployment signs. "
+                "Even if the damage looks minor, REPORT IT. Do NOT say NONE unless the vehicle "
+                "is genuinely perfect (extremely unlikely for a salvage lot car). "
+            )
 
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"damage-detect-{uuid.uuid4()}",
             system_message=(
-                "You are an expert automotive damage assessor for insurance and salvage vehicles. "
-                "Analyze the car photo and respond ONLY with a JSON object (no markdown, no explanation) with these fields:\n"
-                '{"damage_type": "FRONT|REAR|LEFT FRONT|RIGHT FRONT|LEFT REAR|RIGHT REAR|LEFT DOORS|RIGHT DOORS|ROLLOVER|FIRE|FLOOD|ROOF|UNDERCARRIAGE|NONE", '
+                "You are an expert automotive damage assessor specializing in salvage and insurance vehicles. "
+                f"{context_note}"
+                "Analyze ALL provided photos of this vehicle and respond ONLY with a JSON object (no markdown, no explanation) with these fields:\n"
+                '{"damage_type": "FRONT|REAR|LEFT FRONT|RIGHT FRONT|LEFT REAR|RIGHT REAR|LEFT SIDE|RIGHT SIDE|LEFT DOORS|RIGHT DOORS|ROLLOVER|FIRE|FLOOD|ROOF|UNDERCARRIAGE|NONE", '
                 '"severity": "minor|moderate|severe|total", '
                 '"confidence": 0.0-1.0, '
-                '"details": "brief description of visible damage"}\n'
-                "If the car looks clean with no visible damage, use damage_type=NONE and severity=minor."
+                '"details": "specific description of damage observed across all photos"}\n'
+                "If multiple damage areas exist, pick the PRIMARY / most costly one for damage_type. "
+                "Be specific in details — mention crumpled panels, broken headlights, airbag deployment, etc."
             )
         ).with_model("openai", "gpt-4o")
 
-        image_content = ImageContent(image_base64=img_b64)
         user_msg = UserMessage(
-            text="Analyze this vehicle photo. Identify the primary damage area and severity. Return only the JSON.",
-            file_contents=[image_content]
+            text=f"Analyze these {len(image_contents)} photo(s) of a vehicle from a {'salvage/rebuildable' if is_salvage_lot else 'used car'} lot. Identify the primary damage area and severity. Return only the JSON.",
+            file_contents=image_contents
         )
         response_text = await chat.send_message(user_msg)
-        # Parse JSON from response
         import json
         clean = response_text.strip()
         if clean.startswith("```"):
             clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
             clean = clean.rsplit("```", 1)[0]
         result = json.loads(clean)
-        logger.info(f"  AI damage detection: {result.get('damage_type')} ({result.get('severity')}) conf={result.get('confidence')}")
+        logger.info(f"  AI damage detection ({len(image_contents)} photos): {result.get('damage_type')} ({result.get('severity')}) conf={result.get('confidence')}")
         return {
             "damage": result.get("damage_type", ""),
             "severity": result.get("severity", "unknown"),
@@ -969,9 +997,17 @@ async def run_full_scrape():
         # AI Damage Detection: if no damage listed and photos exist, use vision AI
         ai_damage_result = None
         severity = ""
-        if (not damage or damage.strip() == "") and raw.get("photo"):
+        if (not damage or damage.strip() == "") and (raw.get("photos") or raw.get("photo")):
             try:
-                ai_damage_result = await detect_damage_from_photo(raw["photo"])
+                # Send up to 3 photos for better detection
+                photos_to_analyze = raw.get("photos", [])[:3]
+                if not photos_to_analyze and raw.get("photo"):
+                    photos_to_analyze = [raw["photo"]]
+                ai_damage_result = await detect_damage_from_photo(
+                    photos_to_analyze,
+                    source=raw.get("source", ""),
+                    brand_status=brand
+                )
                 if ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]:
                     damage = ai_damage_result["damage"]
                     severity = ai_damage_result.get("severity", "")
@@ -1049,8 +1085,8 @@ async def run_full_scrape():
             "mv_breakdown": mv_breakdown,
             "repair_breakdown": repair_breakdown,
             "fees_breakdown": fees_breakdown,
-            "ai_damage_detected": ai_damage_result is not None and ai_damage_result.get("confidence", 0) >= 0.4,
-            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result else "",
+            "ai_damage_detected": bool(ai_damage_result and ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]),
+            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result and ai_damage_result.get("damage", "") not in ["", "NONE"] else "",
         }
 
         # Upsert by URL
@@ -1339,9 +1375,16 @@ async def recalculate_all():
         # AI damage detection if no damage and photos exist
         severity = ""
         ai_damage_result = None
-        if (not damage or damage.strip() == "") and l.get("photo"):
+        if (not damage or damage.strip() == "") and (l.get("photos") or l.get("photo")):
             try:
-                ai_damage_result = await detect_damage_from_photo(l["photo"])
+                photos_to_analyze = l.get("photos", [])[:3]
+                if not photos_to_analyze and l.get("photo"):
+                    photos_to_analyze = [l["photo"]]
+                ai_damage_result = await detect_damage_from_photo(
+                    photos_to_analyze,
+                    source=l.get("source", ""),
+                    brand_status=brand
+                )
                 if ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]:
                     damage = ai_damage_result["damage"]
                     severity = ai_damage_result.get("severity", "")
@@ -1385,8 +1428,8 @@ async def recalculate_all():
             "mv_breakdown": mv_breakdown,
             "repair_breakdown": repair_breakdown,
             "fees_breakdown": fees_breakdown,
-            "ai_damage_detected": ai_damage_result is not None and ai_damage_result.get("confidence", 0) >= 0.4,
-            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result else "",
+            "ai_damage_detected": bool(ai_damage_result and ai_damage_result.get("confidence", 0) >= 0.4 and ai_damage_result.get("damage", "") not in ["", "NONE"]),
+            "ai_damage_details": ai_damage_result.get("details", "") if ai_damage_result and ai_damage_result.get("damage", "") not in ["", "NONE"] else "",
         }
         await db.listings.update_one({"url": l["url"]}, {"$set": update_doc})
         updated += 1
