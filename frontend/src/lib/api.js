@@ -17,6 +17,12 @@ export const statsApi = {
 export const scrapeApi = {
   trigger: () => api.post('/scrape'),
   status: () => api.get('/scrape-status'),
+  history: () => api.get('/scan-history'),
+};
+
+export const settingsApi = {
+  get: () => api.get('/settings'),
+  update: (data) => api.put('/settings', data),
 };
 
 export default api;

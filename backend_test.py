@@ -190,6 +190,9 @@ class AutoFlipAPITester:
         # Get initial scrape status
         success, initial_status = self.run_test("Get Initial Scrape Status", "GET", "/scrape-status", 200)
         
+        # Test scan history
+        self.run_test("Get Scan History", "GET", "/scan-history", 200)
+        
         # Trigger manual scrape
         success, scrape_response = self.run_test("Trigger Manual Scrape", "POST", "/scrape", 200)
         
@@ -204,6 +207,29 @@ class AutoFlipAPITester:
                 self.run_test("Get Scrape Status After Start", "GET", "/scrape-status", 200)
         
         return success, scrape_response
+    
+    def test_settings_functionality(self):
+        """Test settings endpoints"""
+        # Get current settings
+        success, settings = self.run_test("Get Settings", "GET", "/settings", 200)
+        
+        original_interval = settings.get('scan_interval', 600) if success else 600
+        
+        # Test updating settings to 15 min (900 seconds)
+        success, updated = self.run_test("Update Settings to 15min", "PUT", "/settings", 200, 
+                                       data={"scan_interval": 900})
+        
+        if success and updated:
+            if updated.get('scan_interval') == 900:
+                print("   Settings updated to 15 minutes successfully")
+            else:
+                print("   Settings update may have failed")
+        
+        # Reset back to original
+        self.run_test("Reset Settings", "PUT", "/settings", 200,
+                     data={"scan_interval": original_interval})
+        
+        return success, updated
 
     def run_comprehensive_test(self):
         """Run all tests in sequence"""
@@ -223,6 +249,9 @@ class AutoFlipAPITester:
         
         # Scraping functionality
         self.test_scraping_functionality()
+        
+        # Settings functionality  
+        self.test_settings_functionality()
         
         # Print summary
         print("\n" + "=" * 70)

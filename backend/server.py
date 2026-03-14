@@ -688,13 +688,23 @@ async def run_full_scrape():
             await db.listings.insert_one(listing_doc)
             new_count += 1
 
-    # Mark listings not seen in this scrape as inactive
-    scraped_urls = {l.get("url") for l in all_listings if l.get("url")}
-    if scraped_urls:
-        await db.listings.update_many(
-            {"url": {"$nin": list(scraped_urls)}, "is_inactive": {"$ne": True}},
-            {"$set": {"is_inactive": True}}
-        )
+    # Mark listings not seen in this scrape as inactive — per source only
+    # Only mark inactive for sources that actually returned results
+    source_urls = {}
+    for l in all_listings:
+        src = l.get("source", "")
+        url = l.get("url", "")
+        if src and url:
+            if src not in source_urls:
+                source_urls[src] = set()
+            source_urls[src].add(url)
+
+    for src, urls in source_urls.items():
+        if urls:  # Only mark inactive if this source returned results
+            await db.listings.update_many(
+                {"source": src, "url": {"$nin": list(urls)}, "is_inactive": {"$ne": True}},
+                {"$set": {"is_inactive": True}}
+            )
 
     finish_time = datetime.now(timezone.utc).isoformat()
     await db.scrape_status.update_one(
@@ -720,20 +730,50 @@ async def run_full_scrape():
 # ─── Background scheduler ───
 scrape_lock = asyncio.Lock()
 scrape_task = None
+current_interval = 600  # default 10 minutes
+
+async def get_scan_interval():
+    settings = await db.user_settings.find_one({"id": "global"}, {"_id": 0})
+    if settings:
+        return settings.get("scan_interval", 600)
+    return 600
 
 async def scheduled_scrape():
-    """Run scrape every 5 minutes"""
+    """Run scrape on user-configured interval"""
+    global current_interval
     while True:
+        current_interval = await get_scan_interval()
         async with scrape_lock:
             try:
                 await run_full_scrape()
             except Exception as e:
                 logger.error(f"Scheduled scrape error: {e}")
-        await asyncio.sleep(300)  # 5 minutes
+        # Log this scan to history
+        await db.scan_history.insert_one({
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "interval": current_interval,
+            "status": "completed",
+        })
+        # Keep only last 50 history entries
+        count = await db.scan_history.count_documents({})
+        if count > 50:
+            oldest = await db.scan_history.find().sort("timestamp", 1).limit(count - 50).to_list(count - 50)
+            if oldest:
+                ids = [o["id"] for o in oldest]
+                await db.scan_history.delete_many({"id": {"$in": ids}})
+        await asyncio.sleep(current_interval)
 
 @app.on_event("startup")
 async def startup():
     global scrape_task
+    # Init settings if not exists
+    existing_settings = await db.user_settings.find_one({"id": "global"})
+    if not existing_settings:
+        await db.user_settings.insert_one({
+            "id": "global",
+            "scan_interval": 600,
+        })
     # Check if we have any listings
     count = await db.listings.count_documents({})
     if count == 0:
@@ -851,7 +891,38 @@ async def trigger_scrape():
 @api_router.get("/scrape-status")
 async def get_scrape_status():
     status = await db.scrape_status.find_one({"id": "global"}, {"_id": 0})
-    return status or {"status": "never_run"}
+    settings = await db.user_settings.find_one({"id": "global"}, {"_id": 0})
+    interval = settings.get("scan_interval", 600) if settings else 600
+    result = status or {"status": "never_run"}
+    result["scan_interval"] = interval
+    result["is_scanning"] = scrape_lock.locked()
+    return result
+
+@api_router.get("/scan-history")
+async def get_scan_history():
+    history = await db.scan_history.find({}, {"_id": 0}).sort("timestamp", -1).to_list(20)
+    return history
+
+@api_router.get("/settings")
+async def get_settings():
+    settings = await db.user_settings.find_one({"id": "global"}, {"_id": 0})
+    return settings or {"id": "global", "scan_interval": 600}
+
+@api_router.put("/settings")
+async def update_settings(data: dict):
+    allowed = {"scan_interval"}
+    update = {k: v for k, v in data.items() if k in allowed}
+    if "scan_interval" in update:
+        val = int(update["scan_interval"])
+        if val < 60:
+            val = 60
+        if val > 3600:
+            val = 3600
+        update["scan_interval"] = val
+    if update:
+        await db.user_settings.update_one({"id": "global"}, {"$set": update}, upsert=True)
+    settings = await db.user_settings.find_one({"id": "global"}, {"_id": 0})
+    return settings
 
 # Include router + CORS
 app.include_router(api_router)
