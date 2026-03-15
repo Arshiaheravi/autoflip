@@ -1,0 +1,56 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# IDE and editors
+.idea/
+.vscode/
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing / coverage
+/coverage
+.pytest_cache/
+
+# Production builds
+/build
+dist/
+*.tsbuildinfo
+
+# Logs and debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dump.rdb
+
+# System files
+.DS_Store
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Deployment
+.vercel
+
+# Build caches
+.cache/
+
+# Archive files and large assets
+*.zip
+*.tar.gz
+*.tar
+*.tgz
+
+# Environment files (keep .env.example committed)
+.env
+.env.*
+!.env.example
+*token.json*
+*credentials.json*
