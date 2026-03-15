@@ -796,14 +796,32 @@ function DetailDialog({ listing, onClose }) {
                     View calculation breakdown
                   </summary>
                   <div className="mt-2 bg-background/50 border border-border/30 rounded-sm p-3 space-y-1.5 font-data text-[11px]">
-                    <Row label="Est. MSRP (new)" value={fmt(l.mv_breakdown.msrp)} dim note={l.mv_breakdown.msrp_source === 'model_match' ? 'Model matched' : 'Estimated'} />
-                    <Row label="Depreciation" value={`×${l.mv_breakdown.depreciation}`} dim note={`${l.mv_breakdown.age}yr old`} />
-                    <Row label="Brand Retention" value={`×${l.mv_breakdown.brand_mult}`} dim note={l.mv_breakdown.brand} />
-                    <Row label="Body Type Demand" value={`×${l.mv_breakdown.body_mult}`} dim />
-                    <Row label="Trim Level" value={`×${l.mv_breakdown.trim_mult}`} dim />
-                    <Row label="Color Premium" value={`×${l.mv_breakdown.color_mult}`} dim />
-                    <Row label="Mileage Adj." value={`×${l.mv_breakdown.mileage_mult}`} dim />
-                    <Row label="Title Status" value={`×${l.mv_breakdown.title_mult}`} dim note={l.mv_breakdown.title_status?.replace('_', ' ')} />
+                    {l.mv_breakdown?.autotrader_median && (
+                      <>
+                        <Row label="AutoTrader Comps" value={`${l.mv_breakdown.autotrader_count} listings found`} dim note={l.mv_breakdown.blend_method?.replace(/_/g, ' ')} />
+                        <Row label="  AT Median (clean)" value={fmt(l.mv_breakdown.autotrader_median)} dim />
+                        <Row label="  AT Range" value={`${fmt(l.mv_breakdown.autotrader_low)} – ${fmt(l.mv_breakdown.autotrader_high)}`} dim />
+                        <Row label="  AT Adjusted (title)" value={fmt(l.mv_breakdown.autotrader_adjusted)} dim />
+                        <Separator className="bg-border/20 my-1" />
+                      </>
+                    )}
+                    <Row label="Formula: Est. MSRP" value={fmt(l.mv_breakdown.msrp)} dim note={l.mv_breakdown.msrp_source === 'model_match' ? 'Model matched' : 'Estimated'} />
+                    <Row label="Formula: Depreciation" value={`×${l.mv_breakdown.depreciation}`} dim note={`${l.mv_breakdown.age}yr old`} />
+                    <Row label="Formula: Brand" value={`×${l.mv_breakdown.brand_mult}`} dim note={l.mv_breakdown.brand} />
+                    <Row label="Formula: Body Type" value={`×${l.mv_breakdown.body_mult}`} dim />
+                    <Row label="Formula: Trim" value={`×${l.mv_breakdown.trim_mult}`} dim />
+                    <Row label="Formula: Color" value={`×${l.mv_breakdown.color_mult}`} dim />
+                    <Row label="Formula: Mileage" value={`×${l.mv_breakdown.mileage_mult}`} dim />
+                    <Row label="Formula: Title Status" value={`×${l.mv_breakdown.title_mult}`} dim note={l.mv_breakdown.title_status?.replace(/_/g, ' ')} />
+                    {l.mv_breakdown?.formula_value && (
+                      <Row label="Formula Result" value={fmt(l.mv_breakdown.formula_value)} dim />
+                    )}
+                    {l.mv_breakdown?.blend_method !== 'formula_only' && (
+                      <>
+                        <Separator className="bg-border/20 my-1" />
+                        <Row label="Blended Market Value" value={fmt(l.market_value)} highlight />
+                      </>
+                    )}
                   </div>
                 </details>
               )}

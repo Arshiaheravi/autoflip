@@ -1,89 +1,44 @@
 # AutoFlip Intelligence - PRD
 
 ## Problem Statement
-Build a web app that monitors two car dealer websites (Cathcart Auto, Pic N Save), scrapes all vehicle listings, and automatically calculates the estimated profit for each car if bought, fixed, and resold in Ontario, Canada. Calculations must be "perfectly accurate", reflecting a professional car flipper's assessment.
+Build a web app that monitors two car dealer websites (Cathcart Auto, Pic N Save), scrapes all vehicle listings, and calculates profit if bought, fixed, and resold in Ontario. Must use real market data + sophisticated formula for accuracy.
 
 ## Tech Stack
-- Backend: FastAPI, Motor (MongoDB async), httpx, BeautifulSoup4, emergentintegrations (GPT-4o vision)
+- Backend: FastAPI, Motor (MongoDB), httpx, BeautifulSoup4, emergentintegrations (GPT-4o vision)
 - Frontend: React, TailwindCSS, Shadcn/UI, Axios
 - Database: MongoDB
-- AI: GPT-4o via Emergent Integrations for damage detection from photos
+- AI: GPT-4o (damage detection), AutoTrader.ca (market comps)
 
-## Architecture
-```
-/app
-├── backend/
-│   ├── server.py       # FastAPI app, scrapers, v2 calc engine, AI damage detection, API endpoints
-│   ├── tests/          # pytest test files (test_filters.py, test_v2_calc_engine.py)
-│   └── .env            # MONGO_URL, DB_NAME, EMERGENT_LLM_KEY
-└── frontend/
-    ├── src/
-    │   ├── App.js      # All pages: Dashboard, About, Settings
-    │   ├── lib/api.js  # Axios API client
-    │   ├── lib/utils-app.js  # Formatting utilities (fmt, fmtDate, etc.)
-    │   └── index.css   # Global styles + CSS vars
-    └── .env
-```
+## Calculation Engine v2.1 (Blended)
+### Market Value = 60% AutoTrader Comps + 40% Formula
+- **AutoTrader.ca**: Scrapes real Ontario listings for same make/model/year (±1yr). Extracts median asking price. 24hr DB-persisted cache. Rotating user agents, rate limiting (10 req/cycle).
+- **Formula**: MSRP × Depreciation × Brand × BodyType × Trim × Color × Mileage × TitleStatus
+- **Blend**: ≥3 comps → 60/40 AT/formula. 1-2 comps → 40/60. No comps → 100% formula.
 
-## Key API Endpoints
-- GET /api/listings - Filterable/sortable listing list (source, brand_type, status, search, damage_type, min_profit, max_price, min_score, sort_by including date)
-- GET /api/listings/{id} - Single listing with full v2 breakdown
-- GET /api/stats - Dashboard stats summary
-- GET /api/calc-methodology - Full documentation of calculation engine v2
-- POST /api/recalculate - Recalculate all listings with v2 engine + AI damage detection
-- POST /api/scrape - Trigger manual scrape
-- GET /api/scrape-status - Current scrape status + countdown
-- GET /api/scan-history - Past scan log
-- GET /api/settings / PUT /api/settings - User settings
-
-## Calculation Engine v2.0 (Completed 2026-03-14)
-### Market Value Formula
-`Market Value = MSRP × Depreciation × Brand × BodyType × Trim × Color × Mileage × TitleStatus`
-
-8 factors:
-1. MSRP Baseline — 100+ model database
-2. Depreciation Curve — Canadian Black Book-inspired (Year 1 = 82%, Year 5 = 48%, Year 10 = 25%)
-3. Brand Retention — Toyota 1.18, Lexus 1.22, Honda 1.14, Dodge 0.88, Fiat 0.68
-4. Body Type Demand — Trucks 1.30x, Off-road SUVs 1.20x, Compact SUVs 1.15x, Sedans 0.95x
-5. Trim Level — Limited/Platinum 1.25x, Sport/GT 1.15x, XLT/EX 1.10x
-6. Color Premium — White +4%, Black +3%, Silver +2%, Yellow -9%, Pink -12%
-7. Mileage Adjustment — 18,000 km/yr avg, continuous curve (low = +8%, high = -18%+)
-8. Title Status — Salvage 55%, Rebuilt 75%, Clean 100%
-
-### Repair Cost Formula
-`Total Repair = (Base Repair × Severity) + Safety ($100) + Salvage Process ($625 if salvage)`
-- 16 damage zones with research-based cost ranges
+### Repair Cost
+- 16 damage zones with Ontario body shop rates ($110-130/hr)
 - Severity multiplier: Minor 0.7x, Moderate 1.0x, Severe 1.4x, Total 1.8x
-- Salvage-to-rebuilt: Structural inspection $400 + VIN verification $75 + Appraisal $150
+- Salvage→Rebuilt: Structural $400 + VIN $75 + Appraisal $150 = $625
 
-### AI Damage Detection
-- When no damage listed but photos exist, GPT-4o vision analyzes the car photo
-- Returns damage type, severity, confidence, and details
-- Only applied when confidence >= 40%
-- 39 AI detections in latest scrape
+### AI Damage Detection (GPT-4o Vision)
+- Analyzes up to 3 photos per car, context-aware (salvage lot = look harder)
+- Only flags when confidence ≥ 40%
 
-### Ontario Fees
-- HST: 13% of purchase price
-- OMVIC: $22, MTO: $32, Safety: $100
-
-### Deal Scoring (1-10)
-- Based on average profit + ROI bonus (>60%: +1pt) + risk penalty (worst case < -$2000: -1pt)
-- 8-10 = BUY, 5-7 = WATCH, 1-4 = SKIP
+### Ontario Fees: HST 13% + OMVIC $22 + MTO $32 + Safety $100
+### Deal Score: 1-10 with BUY/WATCH/SKIP labels, factors ROI + risk
 
 ## Completed Features
-- Full scrapers for Cathcart Auto (rebuilders + used) and Pic N Save
-- v2.0 Enhanced calculation engine with 8-factor market value + AI damage detection
-- Dashboard with stats, listing table with AI badges, detail dialog with expandable breakdown
-- Filters: search, source, title type (Salvage/Clean/Rebuilt), status (For Sale/Coming Soon), sort by date
-- Expanded filters: min profit, max price, min score, damage type
-- Date Found column with relative dates
+- Scrapers: Cathcart Auto (rebuilders + used), Pic N Save
+- v2.1 Blended calculation engine (AutoTrader + formula)
+- AI damage detection from photos (GPT-4o vision)
+- Dashboard with filters: source, title type, status (incl. Sold), sort by date
+- Date Found column, expandable calculation breakdown in detail dialog
 - About page, Settings page, Live scan indicator
-- /api/calc-methodology documentation endpoint
-- /api/recalculate endpoint for re-running calculations
+- AutoTrader cache persisted to MongoDB (survives restarts)
+- /api/calc-methodology, /api/recalculate, /api/fetch-comps endpoints
 
 ## Backlog
-- P1: Update About page to include v2 methodology details
-- P1: Real AutoTrader/Kijiji scraping for actual market comps
-- P2: Price drop alerts/notifications
+- P1: Update About page with v2.1 methodology
+- P1: Gradually expand AutoTrader comp coverage (background task)
+- P2: Price drop alerts
 - P2: Saved/favorited listings
-- P2: "NEW" badge for listings found in last 24 hours

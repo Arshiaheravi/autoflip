@@ -120,12 +120,221 @@ async def detect_damage_from_photo(photo_urls, source: str = "", brand_status: s
         return {"damage": "", "severity": "unknown", "confidence": 0}
 
 
-# ═══════════════════════════════════════════════════════════════════
-# ENHANCED CALCULATION ENGINE v2.0
-# All factors: year, make, model, trim, body type, mileage, color,
-# salvage/clean title, damage type + severity, Ontario fees,
-# salvage-to-rebuilt conversion costs
-# ═══════════════════════════════════════════════════════════════════
+# ─── AutoTrader.ca Market Comp Scraper ───
+# In-memory cache: {cache_key: {"prices": [...], "median": float, "fetched_at": datetime}}
+_autotrader_cache = {}  # In-memory layer
+AUTOTRADER_CACHE_TTL = 3600 * 24  # 24 hours cache
+_autotrader_request_count = 0
+_autotrader_last_reset = datetime.now()
+AUTOTRADER_MAX_REQUESTS_PER_CYCLE = 10  # Only 10 per cycle, spread over time
+AUTOTRADER_DELAY_MIN = 4.0
+AUTOTRADER_DELAY_MAX = 8.0
+
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+]
+
+
+async def _load_at_cache_from_db():
+    """Load AutoTrader comp cache from MongoDB on startup."""
+    global _autotrader_cache
+    docs = await db.autotrader_cache.find({}, {"_id": 0}).to_list(500)
+    for doc in docs:
+        key = doc.get("cache_key")
+        fetched_at = doc.get("fetched_at")
+        if key and fetched_at:
+            age = (datetime.now() - datetime.fromisoformat(fetched_at)).total_seconds()
+            if age < AUTOTRADER_CACHE_TTL:
+                _autotrader_cache[key] = {
+                    "result": doc.get("result", {}),
+                    "fetched_at": datetime.fromisoformat(fetched_at),
+                }
+    logger.info(f"Loaded {len(_autotrader_cache)} AutoTrader cached comps from DB")
+
+# Make → AutoTrader URL slug mapping
+MAKE_SLUGS = {
+    "toyota": "toyota", "honda": "honda", "ford": "ford", "chevrolet": "chevrolet",
+    "gmc": "gmc", "dodge": "dodge", "ram": "ram", "jeep": "jeep",
+    "hyundai": "hyundai", "hyundia": "hyundai", "kia": "kia", "nissan": "nissan", "subaru": "subaru",
+    "mazda": "mazda", "bmw": "bmw", "mercedes": "mercedes-benz", "audi": "audi",
+    "volkswagen": "volkswagen", "volkswagon": "volkswagen", "lexus": "lexus",
+    "acura": "acura", "cadillac": "cadillac", "tesla": "tesla", "mini": "mini",
+    "fiat": "fiat", "mitsubishi": "mitsubishi", "infiniti": "infiniti",
+    "volvo": "volvo", "lincoln": "lincoln", "buick": "buick",
+    "chrysler": "chrysler", "genesis": "genesis", "porsche": "porsche",
+}
+
+# Model → AutoTrader URL slug mapping
+MODEL_SLUGS = {
+    "civic": "civic", "corolla": "corolla", "camry": "camry", "accord": "accord",
+    "cr-v": "cr-v", "crv": "cr-v", "rav4": "rav4", "rav-4": "rav4",
+    "highlander": "highlander", "tacoma": "tacoma", "tundra": "tundra",
+    "4runner": "4runner", "prius": "prius", "sienna": "sienna",
+    "forester": "forester", "outback": "outback", "crosstrek": "crosstrek",
+    "impreza": "impreza", "wrx": "wrx",
+    "mazda3": "mazda3", "cx-5": "cx-5", "cx5": "cx-5", "cx-30": "cx-30", "cx-50": "cx-50", "cx-90": "cx-90",
+    "rogue": "rogue", "pathfinder": "pathfinder", "sentra": "sentra", "altima": "altima",
+    "frontier": "frontier", "murano": "murano",
+    "elantra": "elantra", "sonata": "sonata", "tucson": "tucson", "santa fe": "santa+fe",
+    "palisade": "palisade", "kona": "kona", "ioniq": "ioniq",
+    "forte": "forte", "k5": "k5", "sportage": "sportage", "sorento": "sorento",
+    "telluride": "telluride", "seltos": "seltos", "niro": "niro",
+    "f150": "f-150", "f-150": "f-150", "f250": "f-250", "f-250": "f-250",
+    "escape": "escape", "edge": "edge", "explorer": "explorer", "bronco": "bronco",
+    "mustang": "mustang", "ranger": "ranger", "maverick": "maverick",
+    "silverado": "silverado", "equinox": "equinox", "traverse": "traverse",
+    "blazer": "blazer", "colorado": "colorado", "tahoe": "tahoe", "trax": "trax",
+    "sierra": "sierra", "terrain": "terrain", "acadia": "acadia", "yukon": "yukon",
+    "wrangler": "wrangler", "grand cherokee": "grand+cherokee", "gladiator": "gladiator",
+    "challenger": "challenger", "charger": "charger", "durango": "durango",
+    "3 series": "3+series", "5 series": "5+series", "x3": "x3", "x5": "x5",
+    "model 3": "model+3", "model y": "model+y",
+    "rx350": "rx", "rx": "rx", "nx": "nx", "es": "es", "is": "is",
+    "rdx": "rdx", "mdx": "mdx",
+    "xt4": "xt4", "xt5": "xt5", "escalade": "escalade",
+    "golf": "golf", "jetta": "jetta", "tiguan": "tiguan", "atlas": "atlas",
+}
+
+
+def _extract_make_model(title_lower: str) -> tuple:
+    """Extract make and model slugs from a listing title for AutoTrader search."""
+    make_slug = None
+    model_slug = None
+
+    # Match make (longest match wins)
+    best_make_len = 0
+    for make, slug in MAKE_SLUGS.items():
+        if make in title_lower and len(make) > best_make_len:
+            make_slug = slug
+            best_make_len = len(make)
+
+    # Match model (longest match wins, with word boundary check for short models)
+    best_model_len = 0
+    for model, slug in MODEL_SLUGS.items():
+        if len(model) <= 3:
+            # Short models need word boundary: check with regex
+            if re.search(r'\b' + re.escape(model) + r'\b', title_lower):
+                if len(model) > best_model_len:
+                    model_slug = slug
+                    best_model_len = len(model)
+        else:
+            if model in title_lower and len(model) > best_model_len:
+                model_slug = slug
+                best_model_len = len(model)
+
+    return make_slug, model_slug
+
+
+async def fetch_autotrader_comps(title: str, year: int, mileage: int = None) -> dict:
+    """Fetch comparable vehicle prices from AutoTrader.ca for Ontario."""
+    global _autotrader_request_count, _autotrader_last_reset
+    import asyncio
+
+    title_lower = title.lower()
+    make_slug, model_slug = _extract_make_model(title_lower)
+
+    if not make_slug or not model_slug:
+        return {"prices": [], "median": None, "count": 0, "source": "autotrader", "error": "no_make_model_match"}
+
+    cache_key = f"{make_slug}_{model_slug}_{year}"
+    now = datetime.now()
+
+    # Reset request counter every 30 minutes
+    if (now - _autotrader_last_reset).total_seconds() > 1800:
+        _autotrader_request_count = 0
+        _autotrader_last_reset = now
+
+    if cache_key in _autotrader_cache:
+        cached = _autotrader_cache[cache_key]
+        age_sec = (now - cached["fetched_at"]).total_seconds()
+        if age_sec < AUTOTRADER_CACHE_TTL:
+            return cached["result"]
+
+    # Rate limit check
+    if _autotrader_request_count >= AUTOTRADER_MAX_REQUESTS_PER_CYCLE:
+        return {"prices": [], "median": None, "count": 0, "source": "autotrader", "error": "rate_limit_reached"}
+
+    # Random delay between requests to avoid detection
+    import random
+    delay = random.uniform(AUTOTRADER_DELAY_MIN, AUTOTRADER_DELAY_MAX)
+    await asyncio.sleep(delay)
+    _autotrader_request_count += 1
+
+    year_low = max(year - 1, 2000)
+    year_high = year + 1
+    url = f"https://www.autotrader.ca/cars/{make_slug}/{model_slug}/on/?rcp=15&rcs=0&srt=35&yRng={year_low}%2C{year_high}&prx=-1&prv=Ontario&loc=Toronto%2C+ON"
+
+    try:
+        import random
+        ua = random.choice(_USER_AGENTS)
+        at_headers = {
+            "User-Agent": ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-CA,en-US;q=0.7,en;q=0.3",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Referer": "https://www.autotrader.ca/",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+        }
+        async with httpx.AsyncClient(timeout=15, headers=at_headers, follow_redirects=True) as http:
+            resp = await http.get(url)
+            if resp.status_code != 200:
+                return {"prices": [], "median": None, "count": 0, "source": "autotrader", "error": f"http_{resp.status_code}"}
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        raw_prices = []
+        for el in soup.find_all(class_=re.compile(r'price|Price')):
+            text = el.get_text(strip=True)
+            if '$' in text:
+                match = re.match(r'\$([\d,]+)', text)
+                if match:
+                    try:
+                        p = int(match.group(1).replace(',', ''))
+                        if 2000 < p < 200000:
+                            raw_prices.append(p)
+                    except ValueError:
+                        pass
+
+        # Deduplicate (each listing price appears multiple times in the HTML)
+        prices = sorted(set(raw_prices))
+
+        if not prices:
+            result = {"prices": [], "median": None, "count": 0, "source": "autotrader", "error": "no_prices_found"}
+        else:
+            median = prices[len(prices) // 2]
+            result = {
+                "prices": prices,
+                "median": median,
+                "count": len(prices),
+                "avg": round(sum(prices) / len(prices)),
+                "low": prices[0],
+                "high": prices[-1],
+                "source": "autotrader",
+                "search_url": url,
+            }
+
+        _autotrader_cache[cache_key] = {"result": result, "fetched_at": now}
+        # Persist to MongoDB for crash recovery
+        try:
+            await db.autotrader_cache.update_one(
+                {"cache_key": cache_key},
+                {"$set": {"cache_key": cache_key, "result": result, "fetched_at": now.isoformat()}},
+                upsert=True
+            )
+        except Exception:
+            pass
+        logger.info(f"  AutoTrader comps for {make_slug} {model_slug} {year}: {len(prices)} found, median=${result.get('median')}")
+        return result
+
+    except Exception as e:
+        logger.warning(f"  AutoTrader fetch failed for {make_slug} {model_slug} {year}: {e}")
+        return {"prices": [], "median": None, "count": 0, "source": "autotrader", "error": str(e)}
 
 # ─── MSRP Reference Data (Canadian $, approximate new base MSRP) ───
 MSRP_DATA = {
@@ -178,7 +387,7 @@ BRAND_RETENTION = {
     "subaru": 1.12, "mazda": 1.06, "porsche": 1.25,
     "jeep": 1.08, "ram": 1.05, "gmc": 1.02, "ford": 0.98,
     "chevrolet": 0.92, "dodge": 0.88, "chrysler": 0.82,
-    "hyundai": 0.96, "kia": 0.94, "nissan": 0.90, "mitsubishi": 0.82,
+    "hyundai": 0.96, "hyundia": 0.96, "kia": 0.94, "nissan": 0.90, "mitsubishi": 0.82,
     "bmw": 0.92, "mercedes": 0.90, "audi": 0.88,
     "volkswagen": 0.88, "volkswagon": 0.88, "volvo": 0.90,
     "tesla": 1.05, "cadillac": 0.85, "buick": 0.82,
@@ -367,7 +576,7 @@ def _get_mileage_adjustment(mileage: int, age: int) -> float:
 def estimate_market_value(title: str, year: int, mileage: int = None,
                           colour: str = "", brand_status: str = "") -> dict:
     """
-    Estimate Ontario retail market value using all available factors.
+    Estimate Ontario retail market value using our formula (SYNC version).
     Returns dict with value breakdown for transparency.
     """
     current_year = datetime.now().year
@@ -378,52 +587,40 @@ def estimate_market_value(title: str, year: int, mileage: int = None,
     msrp = _find_msrp(title_lower)
     msrp_source = "model_match"
     if not msrp:
-        # Fallback: estimate MSRP from brand + generic body type
         _, brand_mult = _get_brand(title_lower)
         body_mult = _get_body_type_mult(title_lower)
         msrp = 35000 * brand_mult * body_mult
         msrp_source = "estimated"
 
-    # 2. Depreciation
     dep_factor = _get_depreciation(age)
-
-    # 3. Brand retention
     brand_name, brand_mult = _get_brand(title_lower)
-
-    # 4. Body type demand
     body_mult = _get_body_type_mult(title_lower)
-
-    # 5. Trim adjustment
     trim_mult = _get_trim_mult(title_lower)
-
-    # 6. Color adjustment
     color_mult = _get_color_mult(colour)
-
-    # 7. Mileage adjustment
     mileage_mult = _get_mileage_adjustment(mileage, age) if mileage else 1.0
 
-    # Calculate clean title market value
     clean_value = msrp * dep_factor * brand_mult * body_mult * trim_mult * color_mult * mileage_mult
 
-    # 8. Title status adjustment
     is_salvage = brand_status and "SALVAGE" in brand_status.upper()
     is_rebuilt = brand_status and "REBUILT" in brand_status.upper()
     title_mult = 1.0
     title_note = "clean_title"
     if is_salvage:
-        title_mult = 0.55  # Salvage titles sell for ~55% of clean equivalent
+        title_mult = 0.55
         title_note = "salvage_title"
     elif is_rebuilt:
-        title_mult = 0.75  # Rebuilt titles sell for ~75% of clean equivalent
+        title_mult = 0.75
         title_note = "rebuilt_title"
 
-    final_value = round(clean_value * title_mult, 0)
-
-    # Floor value — no car is worth less than scrap
-    final_value = max(final_value, 800)
+    formula_value = round(clean_value * title_mult, 0)
+    formula_value = max(formula_value, 800)
 
     return {
-        "market_value": final_value,
+        "market_value": formula_value,
+        "formula_value": formula_value,
+        "autotrader_median": None,
+        "autotrader_count": 0,
+        "blend_method": "formula_only",
         "msrp": round(msrp, 0),
         "msrp_source": msrp_source,
         "depreciation": round(dep_factor, 3),
@@ -437,6 +634,64 @@ def estimate_market_value(title: str, year: int, mileage: int = None,
         "title_mult": title_mult,
         "age": age,
     }
+
+
+async def estimate_market_value_blended(title: str, year: int, mileage: int = None,
+                                         colour: str = "", brand_status: str = "") -> dict:
+    """
+    Blended market value: AutoTrader.ca real comps + our formula.
+    - If comps found: 60% AutoTrader median × title_mult + 40% formula
+    - If no comps: 100% formula
+    Returns dict with full breakdown.
+    """
+    # Get our formula-based estimate
+    formula_result = estimate_market_value(title, year, mileage, colour, brand_status)
+
+    # Try to get AutoTrader comps
+    try:
+        comps = await fetch_autotrader_comps(title, year, mileage)
+    except Exception:
+        comps = {"prices": [], "median": None, "count": 0}
+
+    at_median = comps.get("median")
+    at_count = comps.get("count", 0)
+
+    if at_median and at_count >= 3:
+        # Apply title status discount to the AutoTrader median too
+        # (AutoTrader shows clean title prices, our cars may be salvage)
+        title_mult = formula_result["title_mult"]
+        at_adjusted = at_median * title_mult
+
+        # Blend: 60% AutoTrader + 40% formula
+        blended = round(at_adjusted * 0.6 + formula_result["formula_value"] * 0.4, 0)
+        blended = max(blended, 800)
+
+        formula_result["market_value"] = blended
+        formula_result["autotrader_median"] = at_median
+        formula_result["autotrader_adjusted"] = round(at_adjusted, 0)
+        formula_result["autotrader_count"] = at_count
+        formula_result["autotrader_low"] = comps.get("low")
+        formula_result["autotrader_high"] = comps.get("high")
+        formula_result["blend_method"] = "autotrader_60_formula_40"
+    elif at_median and at_count >= 1:
+        # Few comps: 40% AutoTrader + 60% formula
+        title_mult = formula_result["title_mult"]
+        at_adjusted = at_median * title_mult
+
+        blended = round(at_adjusted * 0.4 + formula_result["formula_value"] * 0.6, 0)
+        blended = max(blended, 800)
+
+        formula_result["market_value"] = blended
+        formula_result["autotrader_median"] = at_median
+        formula_result["autotrader_adjusted"] = round(at_adjusted, 0)
+        formula_result["autotrader_count"] = at_count
+        formula_result["autotrader_low"] = comps.get("low")
+        formula_result["autotrader_high"] = comps.get("high")
+        formula_result["blend_method"] = "autotrader_40_formula_60"
+    else:
+        formula_result["blend_method"] = "formula_only"
+
+    return formula_result
 
 
 def get_repair_range(damage_text: str, severity: str = "", is_salvage: bool = False) -> tuple:
@@ -1016,11 +1271,11 @@ async def run_full_scrape():
             except Exception as e:
                 logger.warning(f"  AI damage detection skipped: {e}")
 
-        # Market value (enhanced — uses all factors)
+        # Market value (blended — AutoTrader comps + formula)
         market_value = None
         mv_breakdown = None
         if year and raw.get("title"):
-            mv_result = estimate_market_value(
+            mv_result = await estimate_market_value_blended(
                 raw["title"], year, mileage,
                 colour=colour, brand_status=brand
             )
@@ -1191,6 +1446,8 @@ async def scheduled_scrape():
 @app.on_event("startup")
 async def startup():
     global scrape_task
+    # Load AutoTrader cache from DB
+    await _load_at_cache_from_db()
     # Init settings if not exists
     existing_settings = await db.user_settings.find_one({"id": "global"})
     if not existing_settings:
@@ -1326,6 +1583,84 @@ async def trigger_scrape():
     asyncio.create_task(run_full_scrape())
     return {"status": "started"}
 
+@api_router.post("/fetch-comps")
+async def fetch_comps_for_all():
+    """Slowly fetch AutoTrader comps for all unique vehicles. Runs in background."""
+    global _autotrader_request_count, _autotrader_last_reset
+    _autotrader_request_count = 0
+    _autotrader_last_reset = datetime.now()
+
+    listings = await db.listings.find({}, {"_id": 0, "title": 1, "year": 1, "url": 1, "mileage": 1, "brand": 1, "colour": 1, "mv_breakdown": 1}).to_list(500)
+    # Get unique make/model/year combos
+    seen = set()
+    unique = []
+    for l in listings:
+        title = l.get("title", "")
+        year = l.get("year")
+        if not title or not year:
+            continue
+        make_slug, model_slug = _extract_make_model(title.lower())
+        if not make_slug or not model_slug:
+            continue
+        key = f"{make_slug}_{model_slug}_{year}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(l)
+
+    logger.info(f"Fetching AutoTrader comps for {len(unique)} unique vehicles...")
+    fetched = 0
+    for l in unique:
+        try:
+            comps = await fetch_autotrader_comps(l["title"], l["year"], l.get("mileage"))
+            if comps.get("median"):
+                fetched += 1
+                # Update all listings with this make/model/year
+                make_slug, model_slug = _extract_make_model(l["title"].lower())
+                for listing in listings:
+                    lt = listing.get("title", "").lower()
+                    ly = listing.get("year")
+                    ms, mds = _extract_make_model(lt)
+                    if ms == make_slug and mds == model_slug and ly == l["year"]:
+                        brand = listing.get("brand", "")
+                        colour = listing.get("colour", "")
+                        mv_result = await estimate_market_value_blended(
+                            listing["title"], listing["year"], listing.get("mileage"),
+                            colour=colour, brand_status=brand
+                        )
+                        market_value = mv_result["market_value"]
+                        # Recalculate profit
+                        price = None
+                        existing = await db.listings.find_one({"url": listing["url"]}, {"_id": 0, "price": 1, "repair_low": 1, "repair_high": 1})
+                        if existing:
+                            price = existing.get("price")
+                            rl = existing.get("repair_low", 0)
+                            rh = existing.get("repair_high", 0)
+                            if price and price > 0:
+                                fees_result = calculate_ontario_fees(price, is_salvage=brand and "SALVAGE" in brand.upper())
+                                fees = fees_result["total"]
+                                pb = round(market_value - price - rl - fees, 0)
+                                pw = round(market_value - price - rh - fees, 0)
+                                rb = round((pb / price) * 100, 1) if price > 0 else None
+                                rw = round((pw / price) * 100, 1) if price > 0 else None
+                                sc, sl = calc_deal_score(pb, pw, rb or 0)
+                                await db.listings.update_one({"url": listing["url"]}, {"$set": {
+                                    "market_value": market_value, "mv_breakdown": mv_result,
+                                    "profit_best": pb, "profit_worst": pw,
+                                    "roi_best": rb, "roi_worst": rw,
+                                    "deal_score": sc, "deal_label": sl, "fees": fees,
+                                }})
+                            else:
+                                await db.listings.update_one({"url": listing["url"]}, {"$set": {
+                                    "market_value": market_value, "mv_breakdown": mv_result,
+                                }})
+            if comps.get("error") == "rate_limit_reached":
+                break
+        except Exception as e:
+            logger.warning(f"  Comp fetch error: {e}")
+
+    logger.info(f"AutoTrader comp fetch complete: {fetched}/{len(unique)} vehicles got comps")
+    return {"unique_vehicles": len(unique), "comps_fetched": fetched}
+
 @api_router.get("/scrape-status")
 async def get_scrape_status():
     status = await db.scrape_status.find_one({"id": "global"}, {"_id": 0})
@@ -1400,7 +1735,7 @@ async def recalculate_all():
         market_value = None
         mv_breakdown = None
         if year and l.get("title"):
-            mv_result = estimate_market_value(l["title"], year, mileage, colour=colour, brand_status=brand)
+            mv_result = await estimate_market_value_blended(l["title"], year, mileage, colour=colour, brand_status=brand)
             market_value = mv_result["market_value"]
             mv_breakdown = mv_result
 
@@ -1445,10 +1780,16 @@ async def recalculate_all():
 async def get_calc_methodology():
     """Return the complete calculation methodology documentation."""
     return {
-        "version": "2.0",
-        "engine": "AutoFlip Enhanced Calculation Engine v2.0",
+        "version": "2.1",
+        "engine": "AutoFlip Enhanced Calculation Engine v2.1 (Blended)",
         "market_value": {
-            "description": "Multi-factor market value estimation for Ontario, Canada",
+            "description": "Blended market value: AutoTrader.ca real comparables + multi-factor formula",
+            "blending": {
+                "description": "When AutoTrader comps available: 60% AutoTrader median + 40% formula. With few comps (1-2): 40% AT + 60% formula. No comps: 100% formula.",
+                "autotrader": "Scrapes AutoTrader.ca Ontario listings for same make/model/year (±1 year). Extracts median asking price from real dealer listings. Title status discount applied to AT prices.",
+                "formula": "MSRP × Depreciation × Brand × BodyType × Trim × Color × Mileage × TitleStatus",
+                "cache": "AutoTrader results cached for 6 hours to avoid excessive requests.",
+            },
             "factors": [
                 {"name": "MSRP Baseline", "description": "Looks up the vehicle's approximate new MSRP from a database of 100+ models. If no exact match, estimates from brand + body type."},
                 {"name": "Depreciation Curve", "description": "Applies a non-linear depreciation curve based on Canadian Black Book industry data. Year 1 loses ~18%, then gradual decline. 5-year-old car retains ~48% of MSRP."},
@@ -1505,10 +1846,12 @@ async def get_calc_methodology():
         "technologies": [
             "Python/FastAPI backend with async processing",
             "BeautifulSoup4 + httpx for web scraping",
+            "AutoTrader.ca real-time comparable pricing (scraped, 6hr cache)",
             "GPT-4o Vision API (via Emergent Integrations) for AI damage detection from photos",
             "MongoDB for data persistence",
             "Canadian Black Book-inspired depreciation curves",
             "Ontario-specific fee schedules and market data",
+            "Blended valuation: 60% real market comps + 40% formula (with fallback)",
         ],
     }
 
