@@ -631,11 +631,16 @@ py -m py_compile backend/app/routes/scrape.py
 ```
 **If any check fails → fix it. Never commit broken code. Ever.**
 
-For frontend changes, ALWAYS run a build check before committing:
+For frontend changes, run BOTH checks before committing:
+1. Build check (catches JSX syntax errors):
 ```
-cd frontend && PATH="/c/Program Files/nodejs:$PATH" "C:\\Program Files\\nodejs\\npm.cmd" run build 2>&1 | tail -20
+cd frontend && PATH="/c/Program Files/nodejs:$PATH" "C:\\Program Files\\nodejs\\npm.cmd" run build 2>&1 | tail -10
 ```
-**If `npm run build` reports ANY error → fix it before committing. Never commit broken JSX/JS. Ever.**
+2. Unit tests (run from /tmp shadow copy — OneDrive blocks scoped npm packages):
+```
+cp -r frontend/src /tmp/autoflip-fe/src && NODE_ENV=test PATH="/c/Program Files/nodejs:$PATH" "C:\\Program Files\\nodejs\\npm.cmd" --prefix /tmp/autoflip-fe test -- --watchAll=false --forceExit 2>&1 | tail -10
+```
+**If EITHER check fails → fix it before committing. Never commit broken code. Ever.**
 Common JSX pitfalls: unescaped apostrophes in single-quoted strings (`We're` → `"We're"`), unescaped `<`/`>` in JSX text, missing closing tags.
 
 ### PHASE 5: Commit & Push

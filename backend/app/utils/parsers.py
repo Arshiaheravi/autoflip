@@ -48,6 +48,8 @@ def parse_mileage(text: str) -> Optional[int]:
 
 
 def extract_year(title: str) -> Optional[int]:
+    if not title:
+        return None
     match = re.search(r'(19|20)\d{2}', title)
     if match:
         return int(match.group(0))

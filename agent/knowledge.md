@@ -39,7 +39,17 @@ py -m py_compile backend/app/routes/scrape.py
 
 # Frontend build check (MANDATORY before any frontend commit — catches JSX syntax errors)
 cd frontend && PATH="/c/Program Files/nodejs:$PATH" "C:\Program Files\nodejs\npm.cmd" run build 2>&1 | tail -20
+
+# Frontend unit tests (run from /tmp copy because OneDrive blocks scoped npm packages)
+# IMPORTANT: Always run with NODE_ENV=development first to ensure devDeps install
+cp -r frontend/src /tmp/autoflip-fe/src && NODE_ENV=test PATH="/c/Program Files/nodejs:$PATH" "C:\Program Files\nodejs\npm.cmd" --prefix /tmp/autoflip-fe test -- --watchAll=false --forceExit 2>&1 | tail -10
 ```
+
+### OneDrive + npm scoped packages issue (known)
+- OneDrive's "Files On-Demand" prevents scoped packages (`@testing-library/*`, `@craco/craco`) from installing in top-level node_modules when `NODE_ENV=production` (the default in shell)
+- Fix: always run `npm install` with `NODE_ENV=development`
+- For tests: maintain a shadow copy at `/tmp/autoflip-fe/` with packages properly installed
+- The frontend build still works via `npm run build` because npm's internal PATH resolution uses Windows-native file access (which triggers OneDrive download-on-demand)
 
 ## Known Issues / Watch Out For
 

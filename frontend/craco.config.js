@@ -97,4 +97,24 @@ if (isDevServer) {
   }
 }
 
+// Jest config: resolve @testing-library from /tmp since OneDrive blocks
+// scoped packages (@testing-library/*) from installing to node_modules.
+webpackConfig.jest = {
+  configure: (jestConfig) => {
+    // @testing-library packages can't install to top-level node_modules when
+    // the project has conflicting peer deps (react 19 vs react-scripts' eslint).
+    // Solution: resolve them from /tmp/atl where they install cleanly.
+    jestConfig.modulePaths = [
+      ...(jestConfig.modulePaths || []),
+      '/tmp/atl/node_modules',
+    ];
+    jestConfig.moduleNameMapper = {
+      ...(jestConfig.moduleNameMapper || {}),
+      '^@/(.*)$': '<rootDir>/src/$1',
+    };
+    jestConfig.setupFilesAfterFramework = jestConfig.setupFilesAfterFramework || [];
+    return jestConfig;
+  },
+};
+
 module.exports = webpackConfig;
