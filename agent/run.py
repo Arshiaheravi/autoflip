@@ -1276,16 +1276,7 @@ def build_context() -> str:
 # ──────────────────────────────────────────────────────────────
 
 def choose_backend_mode() -> str:
-    """Ask user to choose backend on first run, or return saved choice."""
-    if BACKEND_MODE_FILE.exists():
-        try:
-            data = json.loads(BACKEND_MODE_FILE.read_text(encoding="utf-8"))
-            mode = data.get("mode", "api")
-            print(f"Backend: {mode.upper()} (saved — delete agent/backend_mode.json to change)")
-            return mode
-        except Exception:
-            pass
-
+    """Always ask user to choose backend mode on every run."""
     print("\n" + "="*55)
     print("Choose backend for agent sessions:")
     print()
@@ -1388,10 +1379,15 @@ def _call_vscode_claude(full_prompt: str, timeout: int = 300) -> tuple:
             f.write(full_prompt)
             tmp = f.name
         # Pipe file content to claude via cmd's type command
+        # Strip ANTHROPIC_API_KEY so claude CLI uses the subscription (not API credits)
+        env = os.environ.copy()
+        env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("ANTHROPIC_API_KEY_OVERRIDE", None)
         cmd = f'type "{tmp}" | "{claude_cmd}" --print --dangerously-skip-permissions'
         result = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
-            timeout=timeout, encoding="utf-8", errors="replace", cwd=str(ROOT)
+            timeout=timeout, encoding="utf-8", errors="replace", cwd=str(ROOT),
+            env=env
         )
         return result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
@@ -1617,8 +1613,25 @@ FILES: <comma-separated files changed>
     # Detect rate limit
     rate_limit_keywords = ["rate limit", "usage limit", "limit reached", "try again", "reset at", "quota exceeded"]
     if any(kw in combined_lower for kw in rate_limit_keywords):
-        print(f"\nRate limit detected.")
         _save_vscode_rate_limit(combined)
+        # Show retry time — outer loop handles sleeping
+        retry_dt = None
+        if RATE_LIMIT_FILE.exists():
+            try:
+                retry_dt = datetime.fromisoformat(
+                    json.loads(RATE_LIMIT_FILE.read_text(encoding="utf-8"))["retry_after"]
+                )
+            except Exception:
+                pass
+        print(f"\n{'='*60}")
+        print(f"  RATE LIMIT HIT — Claude Pro quota exhausted.")
+        if retry_dt:
+            wait_secs = max(int((retry_dt - datetime.now()).total_seconds()), 0)
+            mins = wait_secs // 60
+            print(f"  Retry at: {retry_dt.strftime('%H:%M:%S')}  ({mins}m {wait_secs % 60}s from now)")
+        else:
+            print(f"  Retry time unknown — will wait 1 hour.")
+        print(f"{'='*60}")
         return
 
     if not stdout:
@@ -1989,7 +2002,7 @@ if __name__ == "__main__":
                         )
 
                 # Smart sleep for VS Code mode:
-                # - Rate limited → sleep until retry_after time
+                # - Rate limited → sleep until retry_after, then immediately retry
                 # - Unfinished task → retry in 30 min
                 # - Done cleanly → sleep full interval
                 if RATE_LIMIT_FILE.exists():
@@ -1998,12 +2011,21 @@ if __name__ == "__main__":
                         retry_after = datetime.fromisoformat(data["retry_after"])
                         now = datetime.now()
                         sleep_secs = max(int((retry_after - now).total_seconds()) + 90, 90)
-                        wake = retry_after.strftime("%Y-%m-%d %H:%M")
-                        print(f"\nRate limited. Sleeping until {wake} (+ 90s buffer)...")
-                        time.sleep(sleep_secs)
+                        wake = retry_after.strftime("%H:%M:%S")
+                        mins = sleep_secs // 60
+                        print(f"\n  Sleeping until {wake} ({mins}m {sleep_secs % 60}s)...")
+                        for remaining in range(sleep_secs, 0, -60):
+                            m = remaining // 60
+                            print(f"  ... {m}m remaining", end="\r", flush=True)
+                            time.sleep(min(60, remaining))
+                        print(f"\n  Woke up at {datetime.now().strftime('%H:%M:%S')} — retrying session...")
+                        RATE_LIMIT_FILE.unlink(missing_ok=True)
+                        continue  # retry immediately, no interval sleep
                     except Exception:
-                        print("\nRate limit file unreadable — sleeping 1 hour...")
+                        print("\n  Rate limit file unreadable — sleeping 1 hour...")
                         time.sleep(3600)
+                        RATE_LIMIT_FILE.unlink(missing_ok=True)
+                        continue
                 elif CURRENT_TASK_FILE.exists():
                     print(f"\nUnfinished task detected. Resuming in 30 minutes...")
                     time.sleep(30 * 60)

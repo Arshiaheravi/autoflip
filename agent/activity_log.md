@@ -125,3 +125,16 @@ Cost: $0.00 (VS Code mode)
 Output tail:
 Credit balance is too low
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:24 — FEATURE [vscode]
+**Added SalvageReseller.com scraper — 75 Ontario salvage/rebuild auction listings per scrape run, integrated into runner.py alongside existing sources, 22 unit tests all passing.**
+Impact: Triples the data sources for car flippers. SalvageReseller aggregates ~1,900+ Ontario auction listings (vs ~20-30 from Cathcart/PicNSave) with structured damage type, mileage (auto-converted miles→km), brand status (SALVAGE/REBUILT), and buy-now prices. More data = more BUY deals surfaced = more value for Pro subscribers.
+Files: `backend/app/scrapers/salvagereseller.py`, `backend/app/scrapers/runner.py`, `backend/tests/test_salvagereseller.py`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/skills/auction_listing_scraper.py`, `agent/skills/INDEX.md`
+Output tail:
+DONE: Added SalvageReseller.com scraper — 75 Ontario salvage/rebuild auction listings per scrape run, integrated into runner.py alongside existing sources, 22 unit tests all passing.
+
+IMPACT: Triples the data sources for car flippers. SalvageReseller aggregates ~1,900+ Ontario auction listings (vs ~20-30 from Cathcart/PicNSave) with structured damage type, mileage (auto-converted miles→km), brand status (SALVAGE/REBUILT), and buy-now prices. More data = more BUY deals surfaced = more value for Pro subscribers.
+
+FILES: `backend/app/scrapers/salvagereseller.py`, `backend/app/scrapers/runner.py`, `backend/tests/test_salvagereseller.py`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/skills/auction_listing_scraper.py`, `agent/skills/INDEX.md`
+Cost: $0.00 (VS Code mode)

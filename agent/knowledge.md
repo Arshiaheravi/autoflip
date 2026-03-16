@@ -156,3 +156,8 @@ After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move t
 - **Always update test mocks when adding new imports from mocked modules.** The `utils-app` mock in Dashboard.test.jsx must include every function imported by the component — otherwise tests crash at render time, not at assertion time, making it harder to debug.
 - **`hasPriceDrop` and `priceDroplabel` helpers already existed in utils-app.js** — always check that file before implementing display logic. The backend fields (`has_price_drop`, `price_drop_amount`, `price_drop_pct`, `price_drop_only` filter) were also already in place. This session was purely a frontend wiring job.
 - **Stats grid can grow from 5 → 6 columns**: use `md:grid-cols-6` not `md:grid-cols-5` when adding a new stat card. Mobile stays 2-col automatically.
+
+### 2026-03-16 — Deal Intelligence Session
+- **ROI tiers in calc_deal_score must match flipper economics**: A single ±1 ROI adjustment was too coarse — $2k profit on $2k car (100% ROI) and $2k profit on $20k car (10% ROI) got the same base score. Extended to: roi>100%→+2, roi>60%→+1, roi<-30%→-2, roi<-10%→-1. Two new tests added (225 total).
+- **run_experiment gate works best when changes add new tests**: The previous mileage experiment failed with delta=0 because it modified scores but no new tests were added to capture the expected new behavior. Always add tests that assert the specific new behavior — this makes the metric_after > metric_before clear.
+- **Simplicity criterion**: The ROI tier extension is 4 lines net for a meaningful scoring improvement. Compare to the discarded mileage experiment which added a complex function call with 0 measurable improvement. Small, principled changes beat large speculative refactors.
