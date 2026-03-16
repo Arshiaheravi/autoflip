@@ -217,10 +217,13 @@ TOOLS = [
     {
         "name": "update_current_task",
         "description": (
-            "Track progress on the current task. Call this: "
+            "Track progress on the current task (agents-orchestrator Dev-QA loop pattern). Call this: "
             "(1) when you START a task — write what the full task is and list all steps, "
             "(2) after each commit — mark that step done and note what remains, "
-            "(3) when task is fully done — call with status='done' to clear it. "
+            "(3) when run_health_check FAILS — increment qa_attempt and set qa_feedback to the specific error, "
+            "   this enables up to 3 retry attempts with focused feedback each time, "
+            "   if qa_attempt reaches 3 and still failing — escalate to backlog as 'needs investigation', "
+            "(4) when task is fully done — call with status='done' to clear it. "
             "This file is the first thing read next session so the agent resumes exactly here."
         ),
         "input_schema": {
@@ -236,7 +239,9 @@ TOOLS = [
                     "type": "array", "items": {"type": "string"},
                     "description": "Steps not yet done e.g. ['login page UI', 'protected route wrapper']"
                 },
-                "last_commit": {"type": "string", "description": "The last git commit message made for this task"}
+                "last_commit": {"type": "string", "description": "The last git commit message made for this task"},
+                "qa_attempt": {"type": "integer", "default": 1, "description": "Which QA attempt this is (1-3). Increment when run_health_check fails."},
+                "qa_feedback": {"type": "string", "description": "Specific failure from run_health_check — exact error, test name, what needs fixing"}
             },
             "required": ["task_name", "status", "remaining_steps"]
         }
@@ -499,11 +504,21 @@ def execute_tool(name: str, inputs: dict) -> str:
                 if CURRENT_TASK_FILE.exists():
                     CURRENT_TASK_FILE.unlink()
                 return "Current task cleared — task complete."
-            task_name  = inputs["task_name"]
-            completed  = inputs.get("completed_steps", [])
-            remaining  = inputs["remaining_steps"]
+            task_name   = inputs["task_name"]
+            completed   = inputs.get("completed_steps", [])
+            remaining   = inputs["remaining_steps"]
             last_commit = inputs.get("last_commit", "")
+            qa_attempt  = inputs.get("qa_attempt", 1)
+            qa_feedback = inputs.get("qa_feedback", "")
             ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            retry_block = ""
+            if qa_attempt > 1:
+                retry_block = (
+                    f"\n\n## QA Retry Status (agents-orchestrator pattern)\n"
+                    f"**Attempt {qa_attempt}/3**\n"
+                    f"Previous QA feedback: {qa_feedback}\n"
+                    f"{'⚠️  FINAL ATTEMPT — if this fails, escalate to backlog and move on.' if qa_attempt >= 3 else ''}\n"
+                )
             content = (
                 f"# Current Task — {task_name}\n"
                 f"_Last updated: {ts}_\n\n"
@@ -512,9 +527,10 @@ def execute_tool(name: str, inputs: dict) -> str:
                 + f"\n\n## Remaining Steps (do these next)\n"
                 + "\n".join(f"- [ ] {s}" for s in remaining)
                 + (f"\n\n## Last Commit\n`{last_commit}`\n" if last_commit else "")
+                + retry_block
             )
             CURRENT_TASK_FILE.write_text(content, encoding="utf-8")
-            return f"Task tracker updated. {len(completed)} done, {len(remaining)} remaining."
+            return f"Task tracker updated. {len(completed)} done, {len(remaining)} remaining. QA attempt: {qa_attempt}/3."
 
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
@@ -941,6 +957,15 @@ This makes every modification safe. Never commit a regression.
 - This way: if budget runs out after any commit, next session reads current_task.md and picks up the next step
 - Write clean, async, secure code. Follow existing patterns (async/await, logger not print, type hints)
 - Every new backend function → add a test in backend/tests/
+
+### PHASE 3.5: Dev-QA Retry Loop (agents-orchestrator pattern — max 3 attempts)
+When `run_health_check` fails:
+1. Read the exact error message carefully
+2. Call `update_current_task` with `qa_attempt=N+1`, `qa_feedback=<specific error>`
+3. Fix ONLY what the error describes — don't refactor unrelated things
+4. Re-run `run_health_check`
+5. If attempt 3 fails: add item to backlog as `[!] Needs investigation — {what failed}`, commit what works, move on
+This prevents infinite loops. 3 attempts max, then escalate.
 
 ### PHASE 4: VALIDATE — NON-NEGOTIABLE (no commit without this)
 Run ALL of these after any backend change:
@@ -1402,6 +1427,28 @@ def run_session():
 
         # Mid-session budget check
         session_cost = total_in * cfg_live["input_cost_per_token"] + total_out * cfg_live["output_cost_per_token"]
+
+        # Circuit breaker (Autonomous Optimization Architect pattern):
+        # If burn rate after turn 15 projects > 70% of daily budget, inject model-switch advisory
+        if turn == 15 and model != "claude-haiku-4-5-20251001":
+            projected_total = session_cost * (max_turns / 15)
+            budget_fraction = projected_total / limit
+            if budget_fraction > 0.7:
+                print(f"  Circuit breaker: projected ${projected_total:.2f} > 70% of ${limit:.2f} budget")
+                # Inject cost advisory into next tool results
+                circuit_msg = (
+                    f"CIRCUIT BREAKER ALERT: At turn 15 you've spent ${session_cost:.4f}. "
+                    f"Projected session cost: ${projected_total:.2f} (>{budget_fraction*100:.0f}% of ${limit:.2f} daily budget). "
+                    f"Switch to simpler remaining steps. If the remaining work is research/reading/writing, "
+                    f"call optimize_costs to switch to haiku ($0.80/MTok vs $3/MTok = 4x cheaper). "
+                    f"If writing complex code, continue but be more concise."
+                )
+                # Queue for injection in the next tool_results
+                messages.append({"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "circuit_breaker",
+                     "content": circuit_msg}
+                ]})
+
         if spend + session_cost > limit:
             print("Budget limit hit mid-session. Saving checkpoint...")
             # Extract what we were working on from the last tool call

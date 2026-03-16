@@ -124,3 +124,22 @@ Key findings from real papers — apply these techniques actively:
 - **pytestmark skipif pattern**: For integration tests that need a running server, always add `pytestmark = pytest.mark.skipif(not BASE_URL, reason="...")` at module level — CI-safe and already done for filter/calc tests.
 - **Deal alerts should only fire for NEW listings** (first insert), not updates. This prevents alert spam on every re-scrape of existing listings.
 - **`$addToSet` in MongoDB** is perfect for tracking "already alerted" listings — idempotent, no duplicates, single atomic operation.
+
+## Autonomous Optimization Architect (agency-agents, 2026-03-16)
+
+**Circuit breaker rule:** If session burn rate projects >70% of daily budget by turn 15 → switch to haiku or reduce context. Already implemented in run_session() — fires automatically.
+
+**Model routing by task type:**
+- Research/web_search/knowledge updates/marketing copy = haiku ($0.80/MTok) — 4x cheaper
+- Complex coding/architecture/debugging = sonnet ($3/MTok)
+- Rule: at session start, if task is research-heavy, call `optimize_costs` to switch to haiku
+
+**"Never unbounded":** Every httpx request needs `timeout=20`. Every subprocess.run needs `timeout=N`. Every retry loop needs a cap. The run_health_check enforces 3-attempt cap on QA retries.
+
+**40% cost reduction path:** Track task categories that worked on haiku. If scraper research, marketing sessions, knowledge absorption all work on haiku → route them there permanently.
+
+## agents-orchestrator Dev-QA Loop (agency-agents, 2026-03-16)
+
+**Max 3 QA attempts per step.** update_current_task now accepts qa_attempt (1-3) + qa_feedback (specific error text).
+Pattern: run_health_check → FAIL → update_current_task(qa_attempt=2, qa_feedback="test_deal_score failed: expected 8.5 got 6.0") → fix exactly that → recheck.
+After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move to next task. Never loop forever.
