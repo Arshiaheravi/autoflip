@@ -354,8 +354,12 @@ def calc_deal_score(best_profit: float, worst_profit: float, roi_best: float = 0
     else:
         score = 1
 
-    if roi_best and roi_best > 60:
+    if roi_best and roi_best > 100:
+        score = min(10, score + 2)
+    elif roi_best and roi_best > 60:
         score = min(10, score + 1)
+    elif roi_best and roi_best < -30:
+        score = max(1, score - 2)
     elif roi_best and roi_best < -10:
         score = max(1, score - 1)
 

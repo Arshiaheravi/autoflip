@@ -369,3 +369,15 @@ class TestCalcDealScore:
         score, label = calc_deal_score(-2000, -3000)
         assert score == 1
         assert label == "SKIP"
+
+    def test_exceptional_roi_double_bonus(self):
+        # roi=80 → +1, roi=110 → +2: double capital return should score higher
+        score_high, _ = calc_deal_score(3000, 2000, roi_best=80)
+        score_exceptional, _ = calc_deal_score(3000, 2000, roi_best=110)
+        assert score_exceptional > score_high
+
+    def test_terrible_roi_double_penalty(self):
+        # roi=-20 → -1, roi=-50 → -2: catastrophic ROI should tank the score further
+        score_bad, _ = calc_deal_score(3000, 2000, roi_best=-20)
+        score_terrible, _ = calc_deal_score(3000, 2000, roi_best=-50)
+        assert score_terrible < score_bad
