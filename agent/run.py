@@ -708,8 +708,11 @@ def run_session():
         "content": (
             f"{context}\n\n"
             "---\n\n"
-            "Choose the highest-impact item from the backlog (or a critical bug/improvement you notice), "
-            "implement it completely, test it, commit it, and call task_complete."
+            "Pick ONE small, completable task (max 3-5 files changed). "
+            "If a backlog item is large (e.g. full auth system), break it into the smallest shippable slice "
+            "(e.g. just the backend route, or just the login form — not both at once). "
+            "Implement it completely, validate, commit, push, then call task_complete. "
+            "You have a budget of ~50 turns — pace yourself. Commit early."
         )
     }]
 
@@ -794,6 +797,14 @@ def run_session():
                     "type": "tool_result",
                     "tool_use_id": block.id,
                     "content": str(result)
+                })
+
+            # Warn agent when running low on turns so it wraps up
+            if not done and turn >= max_turns - 8:
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": "turn_warning",
+                    "content": f"WARNING: Only {max_turns - turn - 1} turns remaining. Commit what you have and call task_complete now."
                 })
 
             messages.append({"role": "user", "content": tool_results})

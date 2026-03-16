@@ -3,11 +3,12 @@ import { scrapeApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLanguage } from '@/lib/LanguageContext';
+import UserMenu from '@/components/shared/UserMenu';
 import {
   RefreshCw, Zap, Timer, LayoutDashboard, Info, Settings,
 } from 'lucide-react';
 
-export default function NavBar({ page, setPage }) {
+export default function NavBar({ page, setPage, onLogin, onSignup, onPricing }) {
   const [scrapeStatus, setScrapeStatus] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const [scraping, setScraping] = useState(false);
@@ -69,6 +70,7 @@ export default function NavBar({ page, setPage }) {
     <header className="sticky top-0 z-40 bg-[#09090b]/90 backdrop-blur-xl border-b border-border/30" data-testid="navbar">
       <div className="max-w-[1600px] mx-auto px-4 md:px-8">
         <div className="h-14 flex items-center justify-between">
+          {/* Left: Logo + Nav */}
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setPage('dashboard')}>
               <div className="flex items-center justify-center w-8 h-8 bg-primary/20 rounded-sm">
@@ -99,7 +101,10 @@ export default function NavBar({ page, setPage }) {
               ))}
             </nav>
           </div>
+
+          {/* Right: Status + Controls */}
           <div className="flex items-center gap-3">
+            {/* Live status + countdown */}
             <div className="hidden md:flex items-center gap-4 text-[11px] mr-2">
               <div className="flex items-center gap-1.5">
                 <span className="relative flex h-2 w-2">
@@ -131,17 +136,25 @@ export default function NavBar({ page, setPage }) {
               <span className={lang === 'fa' ? 'text-primary' : 'text-muted-foreground'}>فا</span>
             </button>
 
+            {/* Scan button */}
             <Button
               size="sm"
               variant={scraping ? "outline" : "default"}
               onClick={handleScrape}
               disabled={scraping}
-              className="text-xs"
+              className="text-xs hidden sm:flex"
               data-testid="scrape-btn"
             >
               <RefreshCw className={`h-3 w-3 mr-1 ${scraping ? 'animate-spin' : ''}`} />
               {scraping ? t('nav.scanning_btn') : t('nav.scanNow')}
             </Button>
+
+            {/* User menu / auth buttons */}
+            <UserMenu
+              onLogin={onLogin}
+              onSignup={onSignup}
+              onPricing={onPricing}
+            />
           </div>
         </div>
       </div>
