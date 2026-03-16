@@ -1,8 +1,8 @@
 {
-  "total_sessions": 1,
+  "total_sessions": 10,
   "total_cost_usd": 5.376093,
   "categories": {
-    "feature": 1
+    "feature": 10
   },
   "self_improvements": [
     {

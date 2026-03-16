@@ -1,1 +1,2 @@
 commit	metric_before	metric_after	delta	status	hypothesis
+9e5afea	-3.1400	-3.1400	+0.0000	discard	Adding mileage risk penalty to calc_deal_score should improve score accuracy wit

@@ -52,6 +52,9 @@ SKILLS_DIR           = AGENT_DIR / "skills"
 TRAJECTORIES_FILE    = AGENT_DIR / "trajectories.md"
 SKILLS_DIR.mkdir(exist_ok=True)
 
+BACKEND_MODE_FILE = AGENT_DIR / "backend_mode.json"
+RATE_LIMIT_FILE   = AGENT_DIR / "rate_limit.json"
+
 # Load API key from backend/.env
 load_dotenv(ROOT / "backend" / ".env")
 
@@ -1268,6 +1271,405 @@ def build_context() -> str:
 # MAIN SESSION
 # ──────────────────────────────────────────────────────────────
 
+# ──────────────────────────────────────────────────────────────
+# BACKEND MODE SELECTION
+# ──────────────────────────────────────────────────────────────
+
+def choose_backend_mode() -> str:
+    """Ask user to choose backend on first run, or return saved choice."""
+    if BACKEND_MODE_FILE.exists():
+        try:
+            data = json.loads(BACKEND_MODE_FILE.read_text(encoding="utf-8"))
+            mode = data.get("mode", "api")
+            print(f"Backend: {mode.upper()} (saved — delete agent/backend_mode.json to change)")
+            return mode
+        except Exception:
+            pass
+
+    print("\n" + "="*55)
+    print("Choose backend for agent sessions:")
+    print()
+    print("  1) vscode  — Claude Code (VS Code subscription)")
+    print("              No API cost. Auto-waits on rate limit.")
+    print()
+    print("  2) api     — Anthropic API (pay-per-token)")
+    print("              $15/day budget. Faster, no rate waits.")
+    print("="*55)
+
+    while True:
+        try:
+            choice = input("Enter 1 or 2 [default: 1]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            choice = "1"
+        if choice in ("", "1", "vscode"):
+            mode = "vscode"
+            break
+        elif choice in ("2", "api"):
+            mode = "api"
+            break
+        print("Enter 1 or 2")
+
+    BACKEND_MODE_FILE.write_text(json.dumps({"mode": mode}, indent=2), encoding="utf-8")
+    print(f"Mode '{mode}' saved. Delete agent/backend_mode.json to re-select.\n")
+    return mode
+
+
+def _check_vscode_rate_limit() -> bool:
+    """Returns True (and prints wait time) if still rate limited."""
+    if not RATE_LIMIT_FILE.exists():
+        return False
+    try:
+        data = json.loads(RATE_LIMIT_FILE.read_text(encoding="utf-8"))
+        retry_after = datetime.fromisoformat(data["retry_after"])
+        now = datetime.now()
+        if now < retry_after:
+            wait_secs = int((retry_after - now).total_seconds())
+            mins = wait_secs // 60
+            print(f"VS Code Claude rate limited. Retry at {retry_after.strftime('%H:%M:%S')} "
+                  f"({mins}m {wait_secs % 60}s remaining)")
+            print(f"Message: {data.get('message', '')[:150]}")
+            return True
+        RATE_LIMIT_FILE.unlink(missing_ok=True)
+        return False
+    except Exception:
+        RATE_LIMIT_FILE.unlink(missing_ok=True)
+        return False
+
+
+def _save_vscode_rate_limit(message: str):
+    """Parse rate limit message and save retry time."""
+    import re as _re
+    now = datetime.now()
+    retry_dt = None
+    for pat in [
+        r'reset at (\d{1,2}:\d{2}\s*(?:AM|PM))',
+        r'retry after (\d{1,2}:\d{2}\s*(?:AM|PM))',
+        r'available at (\d{1,2}:\d{2}\s*(?:AM|PM))',
+        r'at (\d{1,2}:\d{2}\s*(?:AM|PM))',
+    ]:
+        m = _re.search(pat, message, _re.IGNORECASE)
+        if m:
+            try:
+                t = datetime.strptime(m.group(1).strip(), "%I:%M %p")
+                t = t.replace(year=now.year, month=now.month, day=now.day)
+                from datetime import timedelta
+                if t <= now:
+                    t += timedelta(days=1)
+                retry_dt = t
+                break
+            except ValueError:
+                pass
+
+    if retry_dt is None:
+        from datetime import timedelta
+        retry_dt = now + timedelta(hours=1)
+        print("Could not parse retry time — defaulting to 1 hour.")
+
+    RATE_LIMIT_FILE.write_text(json.dumps({
+        "retry_after": retry_dt.isoformat(),
+        "message": message[:500]
+    }, indent=2), encoding="utf-8")
+    print(f"Rate limit saved. Agent will auto-resume at {retry_dt.strftime('%H:%M:%S')}.")
+
+
+def _call_vscode_claude(full_prompt: str, timeout: int = 300) -> tuple:
+    """Call claude.cmd non-interactively, piping prompt via stdin. Returns (stdout, stderr)."""
+    import tempfile
+    npm_bin = os.path.join(os.environ.get("APPDATA", ""), "npm")
+    claude_cmd = os.path.join(npm_bin, "claude.cmd")
+    if not os.path.exists(claude_cmd):
+        return "", f"ERROR: claude.cmd not found at {claude_cmd}. Run: npm i -g @anthropic-ai/claude-code"
+    tmp = None
+    try:
+        # Write prompt to temp file — avoids Windows 8191-char arg limit
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.txt', delete=False, encoding='utf-8'
+        ) as f:
+            f.write(full_prompt)
+            tmp = f.name
+        # Pipe file content to claude via cmd's type command
+        cmd = f'type "{tmp}" | "{claude_cmd}" --print --dangerously-skip-permissions'
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True,
+            timeout=timeout, encoding="utf-8", errors="replace", cwd=str(ROOT)
+        )
+        return result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return "", f"TIMEOUT: claude CLI did not respond in {timeout}s"
+    except Exception as e:
+        return "", f"ERROR: {e}"
+    finally:
+        if tmp:
+            try: os.unlink(tmp)
+            except Exception: pass
+
+
+def _get_session_directive(session_num: int) -> str:
+    """Returns the directive for this session number (shared by API + VS Code modes)."""
+    if session_num % 5 == 0:
+        critique_diag = ""
+        if GROWTH_FILE.exists():
+            gm = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
+            history = gm.get("self_critique_history", [])
+            if history:
+                last5 = history[-5:]
+                dims = ["research_depth", "code_quality", "self_growth", "task_completion"]
+                weakest = min(dims, key=lambda d: sum(h.get(d, 2) for h in last5) / max(len(last5), 1))
+                critique_diag = f" Your weakest dimension over last 5 sessions: '{weakest}' — make this the focus."
+        return (
+            f"This is session #{session_num} — a SELF-GROWTH session.{critique_diag}\n\n"
+            "Work through ALL of these in order:\n"
+            "1. **Research queue**: Read agent/research_queue.md — tackle HIGH priority items first. "
+            "For each: web_search → fetch top results → update knowledge.md → delete item from queue.\n"
+            "2. **Anthropic updates**: Fetch https://docs.anthropic.com/en/docs/about-claude/models — "
+            "check for new models, features, pricing. Update config.json + knowledge.md.\n"
+            "3. **Financial audit**: Review growth_metrics.json spend. "
+            "If avg session cost > $3, find cost reduction (caching, model switch, context trimming).\n"
+            "4. **GitHub intelligence**: Search 'FastAPI best practices 2026', 'React 19 patterns', "
+            "'autonomous agent self-improvement' — absorb 3+ concrete techniques into knowledge.md.\n"
+            "5. **Agent architecture**: Read agent/run.py fully. Find one thing to improve. Implement it.\n"
+            "6. **Competitor intelligence**: Search 'car auction SaaS Canada 2026', 'vehicle flipping app' — "
+            "find gaps, update BACKLOG with marketing ideas.\n\n"
+            "The product gets better when the agent gets smarter. Every hour on self-growth is worth 3 hours on features."
+        )
+
+    specialist_cycle = ["revenue", "scraper", "calculations", "ui", "revenue"]
+    specialist = specialist_cycle[session_num % len(specialist_cycle)]
+    specialist_directives = {
+        "revenue": (
+            "**REVENUE SPECIALIST SESSION**\n"
+            "Identity: You are a Senior Monetization Engineer + Growth Marketer hybrid.\n"
+            "Mission: Turn AutoFlip into a revenue-generating machine. Every decision goes through: 'does this get more people to pay?'\n"
+            "Critical rules: Never break the free tier. Test payment flows in sandbox before any live config.\n"
+            "Priority: Stripe Checkout integration (top backlog). If done, pick next revenue item.\n"
+            "Deliverables: Working payment flow with sandbox test, webhook handler, user.plan update, confirmation UI.\n"
+            "Success metrics: User can click 'Go Pro' → complete Stripe checkout → account upgrades → no manual steps.\n"
+            "Tools: Use `run_experiment` for any pricing/conversion change. Use `save_skill` for Stripe patterns."
+        ),
+        "scraper": (
+            "**DATA SPECIALIST SESSION**\n"
+            "Identity: You are a Senior Web Scraping Engineer + Data Pipeline Architect.\n"
+            "Mission: Maximize the volume and quality of salvage vehicle data. More sources = more deals = more value.\n"
+            "Critical rules: Research ToS before scraping. Handle rate limits with exponential backoff. Never crash on HTML changes.\n"
+            "Priority: IAA Canada (https://www.iaai.com/vehiclesearch?lang=en_CA) or Copart Canada — research first.\n"
+            "Deliverables: New scraper module in backend/app/scrapers/, integrated into runner.py, at least 1 pytest test.\n"
+            "Success metrics: New source returns 10+ listings with price, title, URL. All existing tests still pass.\n"
+            "Tools: Use `run_experiment` baseline=listing count. Use `fetch_url` to inspect site HTML before coding."
+        ),
+        "calculations": (
+            "**DEAL INTELLIGENCE SPECIALIST SESSION**\n"
+            "Identity: You are a Senior Quantitative Analyst + Algorithm Engineer.\n"
+            "Mission: Make the deal scores so accurate that subscribers trust them completely.\n"
+            "Critical rules: ALWAYS use `run_experiment` — baseline test count, modify, evaluate, auto-revert if regression.\n"
+            "Priority: Mileage penalty in scoring, colour premium (black/white sell faster), or time-on-market decay.\n"
+            "Deliverables: Modified calculations.py, updated tests, experiment_results.tsv entry showing improvement.\n"
+            "Success metrics: More tests passing, deal scores better reflect real-world flip outcomes (check past deals).\n"
+            "Simplicity rule: A 1% scoring improvement that adds 20 lines of hacky code = discard. Simplification = always keep."
+        ),
+        "ui": (
+            "**UX SPECIALIST SESSION**\n"
+            "Identity: You are a Senior Frontend Engineer + Conversion Rate Optimizer.\n"
+            "Mission: Make the app so good-looking and easy to use that users upgrade just to keep using it.\n"
+            "Critical rules: Mobile-first (375px). Run `npm run build` before AND after every change. WCAG AA contrast.\n"
+            "Priority: Watchlist/saved listings, better mobile layout, price drop badge, or side-by-side comparison.\n"
+            "Deliverables: Working React component, Tailwind styling, empty/loading/error states, no build errors.\n"
+            "Success metrics: Feature works on 375px mobile, all existing frontend tests pass, build succeeds.\n"
+            "Tools: Use `save_skill` for any reusable React/Tailwind patterns."
+        ),
+    }
+    base = specialist_directives.get(specialist, specialist_directives["revenue"])
+    return (
+        f"{base}\n\n"
+        "Pick ONE small, completable task (max 3-5 files). "
+        "Implement completely, validate, commit, push, call task_complete. "
+        "If a current_task.md exists — resume it first, specialist mode applies to next task after."
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# VS CODE SESSION (no API cost, rate-limit aware)
+# ──────────────────────────────────────────────────────────────
+
+def run_vscode_session():
+    """Run a session using Claude Code CLI.
+
+    claude -p runs Claude Code's own agentic loop using its built-in tools
+    (Bash, Read, Write, Edit, WebSearch, WebFetch). We give it the full task
+    context and let it work autonomously — no custom tool loop needed.
+    """
+    if _check_vscode_rate_limit():
+        return
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n{'='*60}")
+    print(f"AutoFlip Agent [VS Code Mode]  |  {ts}")
+    print('='*60)
+
+    context = build_context()
+    metrics = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
+    session_num = metrics.get("total_sessions", 0) + 1
+    session_directive = _get_session_directive(session_num)
+
+    # Strip API budget section from context — irrelevant in VS Code mode
+    import re as _re
+    context_clean = _re.sub(
+        r'## Budget & Financial Intelligence.*?(?=\n## |\Z)', '',
+        context, flags=_re.DOTALL
+    ).strip()
+
+    # Build task prompt — Claude Code uses its own tools (Bash/Read/Write/WebSearch)
+    task_prompt = f"""You are working autonomously on the AutoFlip project.
+Project root: {ROOT}
+
+NOTE: You are running via VS Code subscription — there are NO API credits or budget limits to worry about. Ignore any dollar amounts or budget references in the context below.
+
+{SYSTEM_PROMPT}
+
+=== SESSION CONTEXT ===
+{context_clean}
+
+=== YOUR MISSION THIS SESSION ===
+{session_directive}
+
+=== EXECUTION RULES ===
+- Python: py (not python3) | Node: C:\\Program Files\\nodejs\\npm.cmd
+- Backend import check: py -c "import sys; sys.path.insert(0,'backend'); from app.main import app; print('OK')"
+- Run tests: py -m pytest backend/tests/ -x -q --tb=short
+- Frontend build: PATH="/c/Program Files/nodejs:$PATH" "C:\\Program Files\\nodejs\\npm.cmd" --prefix frontend run build 2>&1 | tail -10
+- Commit: git add -A && git commit -m "agent: <what> — <why>" && git push origin main
+- After every backend change: run import check + tests before committing. Never commit broken code.
+
+=== TOOL EQUIVALENTS (use these instead of Python tool calls) ===
+
+**update_current_task** — track progress so next session resumes here:
+Write agent/current_task.md with:
+  # Current Task — <name>
+  ## Completed Steps
+  - [x] step done
+  ## Remaining Steps
+  - [ ] next step
+  ## Last Commit
+  `commit message`
+
+**run_experiment** — safe accept/reject gate (Karpathy autoresearch pattern):
+  1. Run: py -m pytest backend/tests/ -q --tb=no 2>&1 | tail -3  → record baseline number
+  2. Make your changes
+  3. Run tests again → compare
+  4. If improved: git add -A && git commit -m "exp: <hypothesis> [baseline→new]"
+  5. If worse: git stash && git stash drop  (revert all changes)
+  6. Append result to agent/experiment_results.tsv: commit\\tmetric_before\\tmetric_after\\tdelta\\tkeep/discard\\thypothesis
+
+**run_health_check** — always run before finishing:
+  py -c "import sys; sys.path.insert(0,'backend'); from app.main import app; print('OK')"
+  py -m pytest backend/tests/ -q --tb=no 2>&1 | tail -5
+  If any test fails → fix it before writing DONE block.
+
+**save_skill** — save reusable patterns to skill library:
+  Write agent/skills/<snake_case_name>.py with the pattern as a docstring + code.
+  Append to agent/skills/INDEX.md: - **name** — description (agent/skills/name.py)
+
+**write_post_mortem** — learn from failures (call when something took >3 turns to fix):
+  Append to agent/knowledge.md:
+  ### Post-Mortem — <date>
+  **What failed:** ...
+  **Root cause:** ...
+  **Fix applied:** ...
+  **Prevention rule:** ...
+
+**add_to_research_queue** — queue knowledge gaps:
+  Append to agent/research_queue.md:
+  - [PRIORITY] **topic** — Added <date>
+    _Why: reason_
+
+**request_api_key** — log needed API keys:
+  Append to agent/api_requests.md with service, env var name, what it unlocks, urgency.
+
+=== MANDATORY SESSION WORKFLOW (follow ALL phases — same as API mode) ===
+
+PHASE 1 — Research first: web_search before writing any code. Find current best practices.
+PHASE 2 — Read & plan: read every file you will touch. Write a 3-step plan.
+PHASE 2.5 — Experiment design: for calculation/scraper/agent changes, use run_experiment gate.
+PHASE 3 — Implement: call update_current_task first. Commit after each logical step.
+PHASE 3.5 — Dev-QA retry: if health_check fails, fix it. Max 3 attempts. Escalate to backlog if still failing.
+PHASE 4 — Validate: run import check + tests + frontend build before every commit.
+PHASE 5 — Commit & push: git add -A && git commit && git push.
+PHASE 6 — Self-reflect & grow (MANDATORY, NO EXCEPTIONS):
+  A. Append a concrete lesson to agent/knowledge.md
+  B. call save_skill for any reusable pattern you wrote
+  C. call add_to_research_queue for any knowledge gap you noticed
+  D. Run health check — fix any regressions before finishing
+  E. Update agent/BACKLOG.md — mark item [x] done, add new ideas
+  F. Update or delete agent/current_task.md
+
+=== END YOUR RESPONSE WITH THIS EXACT BLOCK ===
+DONE: <one sentence: what was accomplished>
+IMPACT: <why this matters to users or revenue>
+FILES: <comma-separated files changed>
+"""
+
+    print(f"  Calling claude CLI — running autonomously (may take 5-20 min)...")
+    stdout, stderr = _call_vscode_claude(task_prompt, timeout=1200)
+    combined = stdout + "\n" + stderr
+    combined_lower = combined.lower()
+
+    ts_short = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Detect rate limit
+    rate_limit_keywords = ["rate limit", "usage limit", "limit reached", "try again", "reset at", "quota exceeded"]
+    if any(kw in combined_lower for kw in rate_limit_keywords):
+        print(f"\nRate limit detected.")
+        _save_vscode_rate_limit(combined)
+        return
+
+    if not stdout:
+        msg = f"Claude CLI returned no output. stderr: {stderr[:300]}"
+        print(f"  {msg}")
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"\n---\n## {ts_short} — ERROR [vscode]\n{msg}\n")
+        finalize_report()
+        return
+
+    # Parse summary block from end of output
+    import re as _re
+    summary_m = _re.search(r'DONE:\s*(.+)',   stdout)
+    impact_m  = _re.search(r'IMPACT:\s*(.+)', stdout)
+    files_m   = _re.search(r'FILES:\s*(.+)',  stdout)
+
+    summary = summary_m.group(1).strip() if summary_m else f"VS Code session {ts_short}"
+    impact  = impact_m.group(1).strip()  if impact_m  else ""
+    files   = [f.strip() for f in files_m.group(1).split(",")] if files_m else []
+
+    print(f"\nDone: {summary}")
+
+    # Activity log
+    log_entry = f"\n---\n## {ts_short} — FEATURE [vscode]\n**{summary}**\n"
+    if impact: log_entry += f"Impact: {impact}\n"
+    if files:  log_entry += f"Files: {', '.join(files)}\n"
+    log_entry += f"Output tail:\n{stdout[-800:]}\nCost: $0.00 (VS Code mode)\n"
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(log_entry)
+
+    append_to_report(
+        f"\n## {ts_short} — FEATURE [vscode]\n**{summary}**\n"
+        + (f"> {impact}\n" if impact else "")
+        + (f"Files: `{'`, `'.join(files)}`\n" if files else "")
+        + "Cost: $0.00 (VS Code mode)\n"
+    )
+
+    # Growth metrics
+    m_data = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {
+        "total_sessions": 0, "total_cost_usd": 0.0,
+        "categories": {}, "self_improvements": [], "next_session_hints": []
+    }
+    m_data["total_sessions"] += 1
+    m_data["categories"]["feature"] = m_data["categories"].get("feature", 0) + 1
+    GROWTH_FILE.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    clear_checkpoint()
+    finalize_report()
+    sync_state(f"after vscode session {ts_short}")
+
+
 def sync_state(label: str = "state"):
     """Push all agent state files to GitHub so any machine can resume."""
     execute_tool("run_command", {
@@ -1304,93 +1706,9 @@ def run_session():
         return
 
     context = build_context()
-    # Every 5th session: prioritize self-growth over product work
     metrics = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
     session_num = metrics.get("total_sessions", 0) + 1
-    if session_num % 5 == 0:
-        # Build a diagnostic from self-critique history
-        critique_diag = ""
-        if GROWTH_FILE.exists():
-            gm = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
-            history = gm.get("self_critique_history", [])
-            if history:
-                last5 = history[-5:]
-                dims = ["research_depth", "code_quality", "self_growth", "task_completion"]
-                weakest = min(dims, key=lambda d: sum(h.get(d, 2) for h in last5) / max(len(last5), 1))
-                critique_diag = f" Your weakest dimension over last 5 sessions: '{weakest}' — make this the focus."
-        session_directive = (
-            f"This is session #{session_num} — a SELF-GROWTH session.{critique_diag}\n\n"
-            "Work through ALL of these in order:\n"
-            "1. **Research queue**: Read agent/research_queue.md — tackle HIGH priority items first. "
-            "For each: web_search → fetch top results → update knowledge.md → delete item from queue.\n"
-            "2. **Anthropic updates**: Fetch https://docs.anthropic.com/en/docs/about-claude/models — "
-            "check for new models, features, pricing. Update config.json + knowledge.md.\n"
-            "3. **Financial audit**: Review growth_metrics.json spend. "
-            "If avg session cost > $3, find cost reduction (caching, model switch, context trimming).\n"
-            "4. **GitHub intelligence**: Search 'FastAPI best practices 2026', 'React 19 patterns', "
-            "'autonomous agent self-improvement' — absorb 3+ concrete techniques into knowledge.md.\n"
-            "5. **Agent architecture**: Read agent/run.py fully. Find one thing to improve. Implement it.\n"
-            "6. **Competitor intelligence**: Search 'car auction SaaS Canada 2026', 'vehicle flipping app' — "
-            "find gaps, update BACKLOG with marketing ideas.\n\n"
-            "The product gets better when the agent gets smarter. Every hour on self-growth is worth 3 hours on features."
-        )
-    else:
-        # Specialist routing (agency-agents pattern): route session to a specialist based on backlog
-        # Cycle: scraper → calculations → ui → revenue → scraper → ...
-        # Override: if current_task.md exists, always resume it regardless of specialist
-        specialist_cycle = ["revenue", "scraper", "calculations", "ui", "revenue"]
-        specialist = specialist_cycle[session_num % len(specialist_cycle)]
-
-        specialist_directives = {
-            # Agency-agents pattern: each specialist has identity, mission, critical rules, deliverables, success metrics
-            "revenue": (
-                "**REVENUE SPECIALIST SESSION**\n"
-                "Identity: You are a Senior Monetization Engineer + Growth Marketer hybrid.\n"
-                "Mission: Turn AutoFlip into a revenue-generating machine. Every decision goes through: 'does this get more people to pay?'\n"
-                "Critical rules: Never break the free tier. Test payment flows in sandbox before any live config.\n"
-                "Priority: Stripe Checkout integration (top backlog). If done, pick next revenue item.\n"
-                "Deliverables: Working payment flow with sandbox test, webhook handler, user.plan update, confirmation UI.\n"
-                "Success metrics: User can click 'Go Pro' → complete Stripe checkout → account upgrades → no manual steps.\n"
-                "Tools: Use `run_experiment` for any pricing/conversion change. Use `save_skill` for Stripe patterns."
-            ),
-            "scraper": (
-                "**DATA SPECIALIST SESSION**\n"
-                "Identity: You are a Senior Web Scraping Engineer + Data Pipeline Architect.\n"
-                "Mission: Maximize the volume and quality of salvage vehicle data. More sources = more deals = more value.\n"
-                "Critical rules: Research ToS before scraping. Handle rate limits with exponential backoff. Never crash on HTML changes.\n"
-                "Priority: IAA Canada (https://www.iaai.com/vehiclesearch?lang=en_CA) or Copart Canada — research first.\n"
-                "Deliverables: New scraper module in backend/app/scrapers/, integrated into runner.py, at least 1 pytest test.\n"
-                "Success metrics: New source returns 10+ listings with price, title, URL. All existing tests still pass.\n"
-                "Tools: Use `run_experiment` baseline=listing count. Use `fetch_url` to inspect site HTML before coding."
-            ),
-            "calculations": (
-                "**DEAL INTELLIGENCE SPECIALIST SESSION**\n"
-                "Identity: You are a Senior Quantitative Analyst + Algorithm Engineer.\n"
-                "Mission: Make the deal scores so accurate that subscribers trust them completely.\n"
-                "Critical rules: ALWAYS use `run_experiment` — baseline test count, modify, evaluate, auto-revert if regression.\n"
-                "Priority: Mileage penalty in scoring, colour premium (black/white sell faster), or time-on-market decay.\n"
-                "Deliverables: Modified calculations.py, updated tests, experiment_results.tsv entry showing improvement.\n"
-                "Success metrics: More tests passing, deal scores better reflect real-world flip outcomes (check past deals).\n"
-                "Simplicity rule: A 1% scoring improvement that adds 20 lines of hacky code = discard. Simplification = always keep."
-            ),
-            "ui": (
-                "**UX SPECIALIST SESSION**\n"
-                "Identity: You are a Senior Frontend Engineer + Conversion Rate Optimizer.\n"
-                "Mission: Make the app so good-looking and easy to use that users upgrade just to keep using it.\n"
-                "Critical rules: Mobile-first (375px). Run `npm run build` before AND after every change. WCAG AA contrast.\n"
-                "Priority: Watchlist/saved listings, better mobile layout, price drop badge, or side-by-side comparison.\n"
-                "Deliverables: Working React component, Tailwind styling, empty/loading/error states, no build errors.\n"
-                "Success metrics: Feature works on 375px mobile, all existing frontend tests pass, build succeeds.\n"
-                "Tools: Use `save_skill` for any reusable React/Tailwind patterns."
-            ),
-        }
-        base_directive = specialist_directives.get(specialist, specialist_directives["revenue"])
-        session_directive = (
-            f"{base_directive}\n\n"
-            "Pick ONE small, completable task (max 3-5 files). "
-            "Implement completely, validate, commit, push, call task_complete. "
-            "If a current_task.md exists — resume it first, specialist mode applies to next task after."
-        )
+    session_directive = _get_session_directive(session_num)
     messages = [{
         "role": "user",
         "content": f"{context}\n\n---\n\n{session_directive}"
@@ -1646,38 +1964,87 @@ if __name__ == "__main__":
     once = "--once" in sys.argv
     interval_h = cfg["interval_hours"]
 
-    print("AutoFlip Autonomous Agent")
-    print(f"Model: {cfg['model']}  |  Budget: ${cfg['daily_limit_usd']}/day  |  Interval: {interval_h}h")
+    # Ask user to choose backend (saved after first answer)
+    backend_mode = choose_backend_mode()
 
-    if once:
-        run_session()
+    if backend_mode == "vscode":
+        print("AutoFlip Autonomous Agent [VS Code Mode — no API cost]")
+        print(f"Interval: {interval_h}h  |  Rate limit: auto-detected from claude CLI")
+
+        if once:
+            run_vscode_session()
+        else:
+            while True:
+                try:
+                    run_vscode_session()
+                except KeyboardInterrupt:
+                    print("\nStopped.")
+                    break
+                except Exception as e:
+                    print(f"Session crashed: {e}")
+                    with open(LOG_FILE, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"\n---\n## {datetime.now().strftime('%Y-%m-%d %H:%M')} — CRASH [vscode]\n"
+                            f"Error: {e}\n"
+                        )
+
+                # Smart sleep for VS Code mode:
+                # - Rate limited → sleep until retry_after time
+                # - Unfinished task → retry in 30 min
+                # - Done cleanly → sleep full interval
+                if RATE_LIMIT_FILE.exists():
+                    try:
+                        data = json.loads(RATE_LIMIT_FILE.read_text(encoding="utf-8"))
+                        retry_after = datetime.fromisoformat(data["retry_after"])
+                        now = datetime.now()
+                        sleep_secs = max(int((retry_after - now).total_seconds()) + 90, 90)
+                        wake = retry_after.strftime("%Y-%m-%d %H:%M")
+                        print(f"\nRate limited. Sleeping until {wake} (+ 90s buffer)...")
+                        time.sleep(sleep_secs)
+                    except Exception:
+                        print("\nRate limit file unreadable — sleeping 1 hour...")
+                        time.sleep(3600)
+                elif CURRENT_TASK_FILE.exists():
+                    print(f"\nUnfinished task detected. Resuming in 30 minutes...")
+                    time.sleep(30 * 60)
+                else:
+                    print(f"\nSleeping {interval_h}h until next session...")
+                    time.sleep(interval_h * 3600)
+
     else:
-        while True:
-            try:
-                run_session()
-            except KeyboardInterrupt:
-                print("\nStopped.")
-                break
-            except Exception as e:
-                print(f"Session crashed: {e}")
-                with open(LOG_FILE, "a", encoding="utf-8") as f:
-                    f.write(
-                        f"\n---\n## {datetime.now().strftime('%Y-%m-%d %H:%M')} — CRASH\n"
-                        f"Error: {e}\n"
-                    )
+        # API mode — original behavior
+        print("AutoFlip Autonomous Agent [API Mode]")
+        print(f"Model: {cfg['model']}  |  Budget: ${cfg['daily_limit_usd']}/day  |  Interval: {interval_h}h")
 
-            # Smart sleep:
-            # - Budget exhausted → sleep until midnight
-            # - Unfinished work (current_task.md exists) → run again in 30 min
-            # - Task completed cleanly → sleep full interval
-            if get_today_spend() >= cfg["daily_limit_usd"]:
-                secs = seconds_until_midnight()
-                wake = datetime.now().fromtimestamp(time.time() + secs).strftime("%Y-%m-%d %H:%M")
-                print(f"\nBudget exhausted. Sleeping until midnight — resuming at {wake}")
-                time.sleep(secs)
-            elif CURRENT_TASK_FILE.exists():
-                print(f"\nUnfinished task detected. Resuming in 30 minutes...")
-                time.sleep(30 * 60)
-            else:
-                print(f"\nSleeping {interval_h}h until next session...")
-                time.sleep(interval_h * 3600)
+        if once:
+            run_session()
+        else:
+            while True:
+                try:
+                    run_session()
+                except KeyboardInterrupt:
+                    print("\nStopped.")
+                    break
+                except Exception as e:
+                    print(f"Session crashed: {e}")
+                    with open(LOG_FILE, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"\n---\n## {datetime.now().strftime('%Y-%m-%d %H:%M')} — CRASH\n"
+                            f"Error: {e}\n"
+                        )
+
+                # Smart sleep:
+                # - Budget exhausted → sleep until midnight
+                # - Unfinished work → run again in 30 min
+                # - Task completed cleanly → sleep full interval
+                if get_today_spend() >= cfg["daily_limit_usd"]:
+                    secs = seconds_until_midnight()
+                    wake = datetime.now().fromtimestamp(time.time() + secs).strftime("%Y-%m-%d %H:%M")
+                    print(f"\nBudget exhausted. Sleeping until midnight — resuming at {wake}")
+                    time.sleep(secs)
+                elif CURRENT_TASK_FILE.exists():
+                    print(f"\nUnfinished task detected. Resuming in 30 minutes...")
+                    time.sleep(30 * 60)
+                else:
+                    print(f"\nSleeping {interval_h}h until next session...")
+                    time.sleep(interval_h * 3600)

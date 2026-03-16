@@ -144,6 +144,14 @@ Key findings from real papers — apply these techniques actively:
 Pattern: run_health_check → FAIL → update_current_task(qa_attempt=2, qa_feedback="test_deal_score failed: expected 8.5 got 6.0") → fix exactly that → recheck.
 After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move to next task. Never loop forever.
 
+### 2026-03-16 — Data Specialist Session
+- **IAA Canada and Copart are not scrapeable**: Both use Incapsula anti-bot protection. IAA explicitly disallows /Search in robots.txt. Don't attempt direct HTTP scraping — need JS rendering or API access.
+- **SalvageReseller.com is a viable Ontario auction source**: Server-side rendered HTML, robots.txt allows listing pages (only blocks /admin/ /my-account/), requires 5-second crawl-delay. ~1,900+ Ontario salvage listings. Similar site: salvageautosauction.com.
+- **parse_price() requires a $ sign**: Calling `parse_price("12,000")` returns None. Must pass `parse_price("$12,000")` or convert directly with `float(str.replace(",",""))`.
+- **`\$?` regex in Python 3.14 is problematic** in certain contexts. Use `[^\d]*` to match optional non-digit chars (like `$`) before a number instead of `\$?`.
+- **Miles to km**: SalvageReseller shows odometer in miles. 1 mile = 1.60934 km. Always convert for consistency with Canadian car buyers.
+- **Auction current bid starts at $0**: Don't use current bid as price for profit calculations if it's $0 — it skews deal scores. Prefer "Buy It Now" price when available.
+
 ### 2026-03-16 — UX Session
 - **Always update test mocks when adding new imports from mocked modules.** The `utils-app` mock in Dashboard.test.jsx must include every function imported by the component — otherwise tests crash at render time, not at assertion time, making it harder to debug.
 - **`hasPriceDrop` and `priceDroplabel` helpers already existed in utils-app.js** — always check that file before implementing display logic. The backend fields (`has_price_drop`, `price_drop_amount`, `price_drop_pct`, `price_drop_only` filter) were also already in place. This session was purely a frontend wiring job.

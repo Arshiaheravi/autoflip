@@ -38,3 +38,90 @@ Files: backend/app/scrapers/runner.py, backend/app/routes/auth.py, backend/app/s
 Self-improvement: Added critical Python 3.14 lesson to knowledge.md: `asyncio.get_event_loop()` raises RuntimeError in test threads — must use `asyncio.run()`. Added full email alert pattern documentation, subscription flow notes, and the "read before coding" lesson (email service was partially implemented from a previous session). Updated validation commands to stay current.
 Next session: Next priority: Stripe payment integration — wire PricingPage Pro CTA to Stripe Checkout ($4.99/mo or $39.99/yr). The /api/auth/subscribe endpoint is already built and ready to receive webhook calls. Just needs Stripe checkout session creation + webhook handler.
 Cost: $5.3761
+
+---
+## 2026-03-16 16:32 — INCOMPLETE [vscode]
+Session ended without task_complete.
+
+---
+## 2026-03-16 16:42 — INCOMPLETE [vscode]
+Session ended without task_complete.
+
+---
+## 2026-03-16 16:46 — FEATURE [vscode]
+**VS Code session 2026-03-16 16:46**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 16:49 — FEATURE [vscode]
+**VS Code session 2026-03-16 16:49**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 16:54 — FEATURE [vscode]
+**VS Code session 2026-03-16 16:54**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 16:55 — FEATURE [vscode]
+**VS Code session 2026-03-16 16:55**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 16:56 — FEATURE [vscode]
+**VS Code session 2026-03-16 16:56**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 16:59 — ERROR [vscode]
+Claude CLI returned no output. stderr: ERROR: cmd.exe not found
+
+---
+## 2026-03-16 16:59 — ERROR [vscode]
+Claude CLI returned no output. stderr: ERROR: [WinError 206] The filename or extension is too long
+
+---
+## 2026-03-16 17:00 — FEATURE [vscode]
+**VS Code session 2026-03-16 17:00**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:07 — FEATURE [vscode]
+**Added price drop badges (teal ↓ $X badge) to listing cards on both desktop and mobile, a "Price Drops" stat card in the stats bar, and a "Price drops only" toggle filter — all wired to existing backend fields.**
+Impact: Car flippers can now instantly spot vehicles whose price has been reduced, which are often the best flip opportunities. One-click filter to see all repriced vehicles without digging through the list.
+Files: `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`
+Output tail:
+---
+
+DONE: Added price drop badges (teal ↓ $X badge) to listing cards on both desktop and mobile, a "Price Drops" stat card in the stats bar, and a "Price drops only" toggle filter — all wired to existing backend fields.
+
+IMPACT: Car flippers can now instantly spot vehicles whose price has been reduced, which are often the best flip opportunities. One-click filter to see all repriced vehicles without digging through the list.
+
+FILES: `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:07 — FEATURE [vscode]
+**VS Code session 2026-03-16 17:07**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:11 — FEATURE [vscode]
+**VS Code session 2026-03-16 17:11**
+Output tail:
+Credit balance is too low
+Cost: $0.00 (VS Code mode)
