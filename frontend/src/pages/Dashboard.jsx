@@ -227,6 +227,7 @@ export default function Dashboard() {
             <SelectItem value="cathcart_rebuilders">{t('dashboard.cathcartRebuilders')}</SelectItem>
             <SelectItem value="cathcart_used">{t('dashboard.cathcartUsed')}</SelectItem>
             <SelectItem value="picnsave">{t('dashboard.picnsave')}</SelectItem>
+            <SelectItem value="salvagereseller">SalvageReseller</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filters.brand_type || 'all'} onValueChange={(v) => updateFilter('brand_type', v === 'all' ? '' : v)}>
@@ -235,7 +236,6 @@ export default function Dashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('dashboard.allTitles')}</SelectItem>
-            <SelectItem value="salvagereseller">SalvageReseller</SelectItem>
             <SelectItem value="clean">{t('dashboard.clean')}</SelectItem>
             <SelectItem value="rebuilt">{t('dashboard.rebuilt')}</SelectItem>
           </SelectContent>
