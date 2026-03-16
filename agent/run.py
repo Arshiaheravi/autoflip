@@ -44,8 +44,10 @@ LOG_FILE          = AGENT_DIR / "activity_log.md"
 BACKLOG_FILE      = AGENT_DIR / "BACKLOG.md"
 API_REQUESTS_FILE = AGENT_DIR / "api_requests.md"
 KNOWLEDGE_FILE    = AGENT_DIR / "knowledge.md"
-CHECKPOINT_FILE   = AGENT_DIR / "checkpoint.json"
-CURRENT_TASK_FILE = AGENT_DIR / "current_task.md"
+CHECKPOINT_FILE      = AGENT_DIR / "checkpoint.json"
+CURRENT_TASK_FILE    = AGENT_DIR / "current_task.md"
+RESEARCH_QUEUE_FILE  = AGENT_DIR / "research_queue.md"
+HEALTH_LOG_FILE      = AGENT_DIR / "health_log.json"
 
 # Load API key from backend/.env
 load_dotenv(ROOT / "backend" / ".env")
@@ -229,6 +231,57 @@ TOOLS = [
         }
     },
     {
+        "name": "add_to_research_queue",
+        "description": (
+            "Add a topic to the autonomous research queue. Call this whenever you encounter something you don't know well enough: "
+            "a library you're uncertain about, a best practice you should verify, a competitor to investigate, "
+            "a new technique you heard about, or a knowledge gap that slowed you down. "
+            "These get researched during the next self-growth session. NEVER skip learning opportunities."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "What to research, e.g. 'Stripe webhooks idempotency best practices'"},
+                "why": {"type": "string", "description": "Why this matters — what problem it solves or what it would improve"},
+                "priority": {"type": "string", "enum": ["high", "medium", "low"]}
+            },
+            "required": ["topic", "why", "priority"]
+        }
+    },
+    {
+        "name": "run_health_check",
+        "description": (
+            "Run the full project health check: backend imports, test suite, git status. "
+            "Call this BEFORE task_complete to verify your work didn't break anything. "
+            "Returns a health score and details. If health is degraded, fix before calling task_complete."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note": {"type": "string", "description": "What you just finished building (for the health log)"}
+            },
+            "required": ["note"]
+        }
+    },
+    {
+        "name": "write_post_mortem",
+        "description": (
+            "Write a structured post-mortem when something failed, took much longer than expected, or had a surprising root cause. "
+            "This is how the agent learns from mistakes and avoids repeating them. "
+            "Call this ANY time: a test fails unexpectedly, a scraper breaks, a bug takes >3 turns to fix, or an approach was completely wrong."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "what_failed": {"type": "string", "description": "Concise description of what went wrong"},
+                "root_cause": {"type": "string", "description": "The actual underlying cause, not just the symptom"},
+                "fix_applied": {"type": "string", "description": "What you did to fix it"},
+                "prevention": {"type": "string", "description": "How to avoid this next time — a rule or check to add"}
+            },
+            "required": ["what_failed", "root_cause", "fix_applied", "prevention"]
+        }
+    },
+    {
         "name": "task_complete",
         "description": (
             "End the session. Call this ONLY after ALL of: "
@@ -236,7 +289,8 @@ TOOLS = [
             "(2) update_current_task called with status='done' (clears the tracker), "
             "(3) backlog item marked [x] via update_backlog, "
             "(4) knowledge.md updated with at least one lesson, "
-            "(5) agent/run.py improved if you spotted anything. "
+            "(5) run_health_check passed (no regressions), "
+            "(6) agent/run.py improved if you spotted anything. "
             "If the task is NOT fully done yet — do NOT call this. "
             "Instead commit what you have, update current_task with remaining steps, and let the next session continue."
         ),
@@ -264,6 +318,16 @@ TOOLS = [
                 "self_improvement": {
                     "type": "string",
                     "description": "What you improved about yourself this session (agent/run.py, knowledge.md, tools, prompt). Be specific."
+                },
+                "self_critique": {
+                    "type": "object",
+                    "description": "Honest 1-3 score on each dimension. 1=poor, 2=ok, 3=excellent.",
+                    "properties": {
+                        "research_depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Did you search before building?"},
+                        "code_quality": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Clean, tested, secure code?"},
+                        "self_growth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Did you improve knowledge.md + agent?"},
+                        "task_completion": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Did you finish what you started?"}
+                    }
                 },
                 "next_session_hint": {
                     "type": "string",
@@ -406,6 +470,96 @@ def execute_tool(name: str, inputs: dict) -> str:
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
             return "Backlog updated."
+
+        elif name == "add_to_research_queue":
+            topic    = inputs["topic"]
+            why      = inputs["why"]
+            priority = inputs.get("priority", "medium")
+            ts = datetime.now().strftime("%Y-%m-%d")
+            entry = f"\n- [{priority.upper()}] **{topic}** — Added {ts}\n  _Why: {why}_\n"
+            if not RESEARCH_QUEUE_FILE.exists():
+                RESEARCH_QUEUE_FILE.write_text(
+                    "# Research Queue\n\nItems to research in the next self-growth session.\n"
+                    "Delete an item after researching it and updating knowledge.md.\n",
+                    encoding="utf-8"
+                )
+            with open(RESEARCH_QUEUE_FILE, "a", encoding="utf-8") as f:
+                f.write(entry)
+            return f"Added to research queue: '{topic}' [{priority}]"
+
+        elif name == "run_health_check":
+            note = inputs.get("note", "end of session")
+            results = {}
+
+            # Backend import check
+            r = subprocess.run(
+                'py -c "import sys; sys.path.insert(0,\'backend\'); from app.main import app; print(\'OK\')"',
+                shell=True, capture_output=True, text=True, timeout=30, cwd=str(ROOT),
+                encoding="utf-8", errors="replace"
+            )
+            results["backend_import"] = "OK" if "OK" in r.stdout else f"FAIL: {(r.stdout+r.stderr)[:200]}"
+
+            # Test suite
+            r2 = subprocess.run(
+                "py -m pytest backend/tests/ -q --tb=no 2>&1 | tail -3",
+                shell=True, capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+                encoding="utf-8", errors="replace"
+            )
+            test_out = (r2.stdout + r2.stderr).strip()
+            results["tests"] = test_out[:300]
+
+            # Parse pass/fail counts
+            import re
+            m = re.search(r"(\d+) passed", test_out)
+            passed = int(m.group(1)) if m else 0
+            m2 = re.search(r"(\d+) failed", test_out)
+            failed = int(m2.group(1)) if m2 else 0
+            health_score = 3 if (results["backend_import"] == "OK" and failed == 0) else \
+                           2 if results["backend_import"] == "OK" else 1
+
+            # Log health
+            health_data = json.loads(HEALTH_LOG_FILE.read_text(encoding="utf-8")) if HEALTH_LOG_FILE.exists() else []
+            health_data.append({
+                "ts": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "note": note,
+                "backend_import": results["backend_import"],
+                "tests_passed": passed,
+                "tests_failed": failed,
+                "health_score": health_score
+            })
+            health_data = health_data[-20:]  # keep last 20
+            HEALTH_LOG_FILE.write_text(json.dumps(health_data, indent=2), encoding="utf-8")
+
+            summary = (
+                f"Health score: {health_score}/3\n"
+                f"Backend import: {results['backend_import']}\n"
+                f"Tests: {passed} passed, {failed} failed\n"
+                f"{test_out}"
+            )
+            if failed > 0:
+                return f"HEALTH CHECK FAILED — fix before task_complete!\n{summary}"
+            return f"Health check passed.\n{summary}"
+
+        elif name == "write_post_mortem":
+            what    = inputs["what_failed"]
+            cause   = inputs["root_cause"]
+            fix     = inputs["fix_applied"]
+            prevent = inputs["prevention"]
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            entry = (
+                f"\n### Post-Mortem — {ts}\n"
+                f"**What failed:** {what}\n"
+                f"**Root cause:** {cause}\n"
+                f"**Fix applied:** {fix}\n"
+                f"**Prevention rule:** {prevent}\n"
+            )
+            # Append to knowledge.md under a Post-Mortems section
+            knowledge = KNOWLEDGE_FILE.read_text(encoding="utf-8") if KNOWLEDGE_FILE.exists() else ""
+            if "## Post-Mortems" not in knowledge:
+                knowledge += "\n\n## Post-Mortems\n"
+            knowledge += entry
+            KNOWLEDGE_FILE.write_text(knowledge, encoding="utf-8")
+            return f"Post-mortem written to knowledge.md: {what}"
 
         elif name == "task_complete":
             return "__TASK_COMPLETE__"
@@ -556,6 +710,14 @@ Every 3rd session minimum: read agent/run.py fully and find something to improve
 - SaaS growth tactics, car flipper communities, Ontario auto market news
 - When you find something useful → update knowledge.md immediately
 
+**Knowledge freshness rule:** If knowledge.md hasn't mentioned a topic in 7+ days, it's stale.
+Key domains to refresh regularly: Anthropic API/models, React patterns, MongoDB/Motor, FastAPI security, SaaS pricing.
+Use `add_to_research_queue` to queue stale domains for the next self-growth session.
+
+**Research queue discipline (Voyager pattern):**
+When you notice a gap → don't just work around it → add it to the research queue via `add_to_research_queue`.
+The research queue is your long-term skill accumulation engine. An agent that never queues research never grows.
+
 ### 5. Marketing Intelligence
 Research competitors, find new channels, improve copy, study what converts.
 
@@ -653,28 +815,43 @@ git push origin main
 Commit messages must explain the WHY, not just the what.
 
 ### PHASE 6: Self-Reflect & Grow — MANDATORY, EVERY SESSION, NO EXCEPTIONS
-This phase is not optional. It is the engine of compounding growth.
+This phase is not optional. It is the engine of compounding growth. (Based on Reflexion, Voyager, and AutoGPT patterns.)
 
-**Step A — Update knowledge.md** (ALWAYS):
-Append at least one concrete lesson to `agent/knowledge.md`. Examples:
-- "BeautifulSoup fails on this site because it uses JS rendering — need httpx + regex fallback"
-- "Tailwind `gap-4` on flex containers doesn't work in older Safari — use `space-x-4` instead"
-- "IAA Canada search requires a session cookie from the homepage first"
+**Step A — Knowledge capture** (ALWAYS — no exceptions):
+Append at least one concrete, specific lesson to `agent/knowledge.md`:
+- "BeautifulSoup fails on this site — uses JS rendering, need regex fallback"
+- "Stripe webhook requires raw body bytes, not parsed JSON"
+- "IAA Canada needs a session cookie from homepage before search works"
+If something took more than 3 turns to fix → write a `write_post_mortem`. This is how the agent gets smarter.
 
-**Step B — Improve agent/run.py** (at least every 3rd session, check growth_metrics.json session count):
-Read agent/run.py and look for at least ONE of:
-- A tool that could be more useful (better description, new parameter, new tool entirely)
-- A section of the system prompt that's missing context or could be sharper
-- A flaw in build_context() — missing info that would help decision-making
-- A better session strategy based on what you just experienced
-Make the change. The agent running next session should be smarter than you are right now.
+**Step B — Research queue** (whenever you noticed a gap):
+Did anything make you think "I should know more about this"? Call `add_to_research_queue`.
+Examples: a library you used without fully understanding, a competitor you heard of, a technique that might help.
 
-**Step C — Fill in task_complete** with:
-- `self_improvement`: exactly what you improved about the agent itself
-- `next_session_hint`: what the next session should do and why (this is read at start of next session)
+**Step C — Agent self-modification** (at least every 3rd session):
+Ask yourself: "What would make me meaningfully smarter or faster next session?"
+- A missing tool? Add it to TOOLS + execute_tool.
+- A weak context section? Improve build_context().
+- A prompt gap? Sharpen SYSTEM_PROMPT.
+- A repeated mistake? Add a guard or warning.
+The agent next session should be measurably better than you right now.
 
-**Step D — Update BACKLOG.md**:
-Mark the item done `[x]`, add any new discoveries, re-prioritize if needed.
+**Step D — Run health check** (ALWAYS before task_complete):
+Call `run_health_check`. If score < 3, fix regressions before finishing.
+
+**Step E — Fill in task_complete** with:
+- `self_improvement`: exactly what you changed about the agent (or "none" if truly nothing)
+- `self_critique`: honest 1-3 scores on research_depth, code_quality, self_growth, task_completion
+- `next_session_hint`: what the next session should prioritize and why
+
+**Step F — Update BACKLOG.md**:
+Mark item done `[x]`. Add any new ideas. Re-prioritize based on business impact.
+
+**Self-critique scoring guide:**
+- research_depth: 3=searched before every change | 2=some research | 1=coded without researching
+- code_quality: 3=all tests pass, clean async, no security issues | 2=tests pass, minor issues | 1=tests failing or messy
+- self_growth: 3=concrete lesson + post-mortem if needed + agent improved | 2=lesson written | 1=nothing written
+- task_completion: 3=task fully done and pushed | 2=partial but committed | 1=nothing committed
 
 ---
 
@@ -818,6 +995,42 @@ def build_context() -> str:
             growth_summary += f"PRIORITY FROM LAST SESSION: {hints[0]['hint']}"
         parts.append(f"## Growth Metrics & Next Priority\n{growth_summary}")
 
+    # Research queue — topics to learn
+    if RESEARCH_QUEUE_FILE.exists():
+        rq = RESEARCH_QUEUE_FILE.read_text(encoding="utf-8").strip()
+        if rq and len(rq) > 60:
+            parts.append(f"## Research Queue (knowledge gaps — tackle during self-growth sessions)\n{rq[-2000:]}")
+
+    # Self-critique trend — what dimensions are weak?
+    if GROWTH_FILE.exists():
+        m2 = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
+        history = m2.get("self_critique_history", [])
+        if history:
+            last3 = history[-3:]
+            dims = ["research_depth", "code_quality", "self_growth", "task_completion"]
+            averages = {}
+            for d in dims:
+                vals = [h[d] for h in last3 if d in h]
+                averages[d] = round(sum(vals)/len(vals), 1) if vals else "?"
+            weak = [d for d, v in averages.items() if isinstance(v, float) and v < 2.5]
+            critique_summary = "Last 3 sessions avg: " + " | ".join(f"{d}={v}" for d, v in averages.items())
+            if weak:
+                critique_summary += f"\n⚠️  WEAK AREAS (avg < 2.5): {', '.join(weak)} — focus on improving these this session"
+            parts.append(f"## Self-Critique Trend\n{critique_summary}")
+
+    # Project health trend
+    if HEALTH_LOG_FILE.exists():
+        health_data = json.loads(HEALTH_LOG_FILE.read_text(encoding="utf-8"))
+        if health_data:
+            last = health_data[-1]
+            trend = [h["health_score"] for h in health_data[-5:]]
+            parts.append(
+                f"## Project Health\n"
+                f"Last check ({last['ts']}): score {last['health_score']}/3, "
+                f"{last['tests_passed']} passed, {last['tests_failed']} failed\n"
+                f"Trend (last 5): {trend}"
+            )
+
     # Recent git commits
     git_log = execute_tool("run_command", {"command": "git log --oneline -12"})
     parts.append(f"## Recent Git Commits\n{git_log}")
@@ -869,11 +1082,31 @@ def run_session():
     metrics = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
     session_num = metrics.get("total_sessions", 0) + 1
     if session_num % 5 == 0:
+        # Build a diagnostic from self-critique history
+        critique_diag = ""
+        if GROWTH_FILE.exists():
+            gm = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
+            history = gm.get("self_critique_history", [])
+            if history:
+                last5 = history[-5:]
+                dims = ["research_depth", "code_quality", "self_growth", "task_completion"]
+                weakest = min(dims, key=lambda d: sum(h.get(d, 2) for h in last5) / max(len(last5), 1))
+                critique_diag = f" Your weakest dimension over last 5 sessions: '{weakest}' — make this the focus."
         session_directive = (
-            f"This is session #{session_num} — a scheduled SELF-GROWTH session. "
-            "Prioritize the 🧠 AGENT SELF-GROWTH section in the backlog over product work. "
-            "Pick one: financial audit, absorb Anthropic docs, GitHub knowledge scan, or agent architecture review. "
-            "The product will benefit more from a smarter agent than from one more feature."
+            f"This is session #{session_num} — a SELF-GROWTH session.{critique_diag}\n\n"
+            "Work through ALL of these in order:\n"
+            "1. **Research queue**: Read agent/research_queue.md — tackle HIGH priority items first. "
+            "For each: web_search → fetch top results → update knowledge.md → delete item from queue.\n"
+            "2. **Anthropic updates**: Fetch https://docs.anthropic.com/en/docs/about-claude/models — "
+            "check for new models, features, pricing. Update config.json + knowledge.md.\n"
+            "3. **Financial audit**: Review growth_metrics.json spend. "
+            "If avg session cost > $3, find cost reduction (caching, model switch, context trimming).\n"
+            "4. **GitHub intelligence**: Search 'FastAPI best practices 2026', 'React 19 patterns', "
+            "'autonomous agent self-improvement' — absorb 3+ concrete techniques into knowledge.md.\n"
+            "5. **Agent architecture**: Read agent/run.py fully. Find one thing to improve. Implement it.\n"
+            "6. **Competitor intelligence**: Search 'car auction SaaS Canada 2026', 'vehicle flipping app' — "
+            "find gaps, update BACKLOG with marketing ideas.\n\n"
+            "The product gets better when the agent gets smarter. Every hour on self-growth is worth 3 hours on features."
         )
     else:
         session_directive = (
@@ -1021,6 +1254,8 @@ def run_session():
             "total_sessions": 0, "total_cost_usd": 0.0,
             "categories": {}, "self_improvements": [], "next_session_hints": []
         }
+        self_critique = task_result.get("self_critique", {})
+
         metrics["total_sessions"] += 1
         metrics["total_cost_usd"] = round(metrics["total_cost_usd"] + cost, 6)
         metrics["categories"][category] = metrics["categories"].get(category, 0) + 1
@@ -1030,6 +1265,11 @@ def run_session():
             # Keep only last 5 hints
             metrics["next_session_hints"] = ([{"ts": ts_short, "hint": next_hint}]
                                               + metrics["next_session_hints"])[:5]
+        if self_critique:
+            if "self_critique_history" not in metrics:
+                metrics["self_critique_history"] = []
+            metrics["self_critique_history"].append({"ts": ts_short, **self_critique})
+            metrics["self_critique_history"] = metrics["self_critique_history"][-10:]
         GROWTH_FILE.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
         clear_checkpoint()  # task finished cleanly — no resume needed

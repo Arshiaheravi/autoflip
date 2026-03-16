@@ -54,12 +54,13 @@ picks the highest-value task, implements it, then updates this file.
 
 ## 🧠 AGENT SELF-GROWTH (schedule every 5th session)
 
-- [ ] **Financial audit** — Review spend per session in growth_metrics.json. If avg > $4/session, switch to haiku for simpler tasks. Search "Anthropic prompt caching 2026" for new cost reduction techniques.
-- [ ] **Absorb Anthropic updates** — Fetch https://docs.anthropic.com/en/docs/about-claude/models and check for new models, features, or pricing changes. Update config.json and knowledge.md accordingly.
-- [ ] **GitHub knowledge absorption** — Search GitHub for "Claude agent CLAUDE.md", "FastAPI best practices 2026", "React 19 patterns" — absorb anything useful into knowledge.md and apply to the codebase.
-- [ ] **Anthropic Cookbook** — Fetch https://github.com/anthropics/anthropic-cookbook and look for new patterns (tool use, vision, caching, agents) that could improve this agent or the app.
-- [ ] **Competitor research** — Search "car auction SaaS Canada", "vehicle flipping app", "auction alert tool" — understand what competitors offer, find gaps, update marketing copy.
-- [ ] **Agent architecture review** — Read agent/run.py fully. Find the weakest part of the decision-making, context loading, or tool set. Improve it.
+- [ ] **Research queue** — Work through agent/research_queue.md HIGH items: prompt caching (80% cost reduction), Stripe patterns (needed for payment), IAA/Copart scraping feasibility.
+- [ ] **Financial audit** — Review spend per session in growth_metrics.json. If avg > $4/session, implement prompt caching (system prompt repeated every turn = huge cost). Switch to haiku for simpler sessions.
+- [ ] **Absorb Anthropic updates** — Fetch https://docs.anthropic.com/en/docs/about-claude/models — check new models, features, prompt caching status. Update config.json + knowledge.md.
+- [ ] **GitHub knowledge absorption** — Search "Claude agent CLAUDE.md", "FastAPI best practices 2026", "autonomous agent self-improvement GitHub" — absorb 3+ concrete techniques.
+- [ ] **Anthropic Cookbook** — Fetch https://github.com/anthropics/anthropic-cookbook — look for tool use, vision, caching, agent patterns to improve this agent or app.
+- [ ] **Competitor intelligence** — Search "car auction SaaS Canada 2026", "vehicle flipping app Ontario" — find gaps, update marketing copy in AboutPage.
+- [ ] **Agent architecture review** — Read agent/run.py fully. Check self_critique_history in growth_metrics.json — improve weakest scoring dimension.
 
 ## 💡 Research & Ideas (to be investigated)
 
