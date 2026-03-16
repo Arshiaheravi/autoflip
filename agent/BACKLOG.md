@@ -7,8 +7,8 @@ picks the highest-value task, implements it, then updates this file.
 
 ## 🔴 HIGH PRIORITY — Revenue / Core
 
-- [~] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. Use FastAPI BackgroundTasks + SMTP/SendGrid. IN PROGRESS.
-- [ ] **Subscription payment (Stripe)** — Wire up the existing PricingPage Pro CTA to a real Stripe Checkout. Users can pay $4.99/mo or $39.99/yr. Webhook updates user.plan → 'pro'.
+- [x] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. SendGrid + SMTP fallback. `/api/auth/subscribe` endpoint added. 58+ unit tests passing. Needs `SENDGRID_API_KEY` in .env to activate.
+- [ ] **Subscription payment (Stripe)** — Wire up the existing PricingPage Pro CTA to a real Stripe Checkout. Users can pay $4.99/mo or $39.99/yr. Webhook updates user.plan → 'pro'. `/api/auth/subscribe` endpoint already built and ready.
 - [ ] **Add IAA Canada auctions** — Scrape https://www.iaai.com/vehiclesearch?lang=en_CA for Ontario salvage/rebuild vehicles. Massive untapped source.
 - [ ] **Add Copart Canada** — Scrape https://www.copart.com/lotSearchResults/?free=true&query=ontario for Ontario listings.
 
@@ -48,6 +48,7 @@ picks the highest-value task, implements it, then updates this file.
 - [x] User authentication (JWT + bcrypt, register/login/me routes, frontend LoginPage + SignupPage)
 - [x] Subscription landing page (PricingPage.jsx with plan cards, billing toggle, FAQ, CTAs)
 - [x] Price history tracking (price_history array, has_price_drop badge, price_drop_amount/pct fields)
+- [x] Deal alert email notifications (SendGrid + SMTP fallback, /api/auth/subscribe endpoint, 58+ unit tests)
 
 ---
 
