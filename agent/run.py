@@ -44,6 +44,7 @@ LOG_FILE          = AGENT_DIR / "activity_log.md"
 BACKLOG_FILE      = AGENT_DIR / "BACKLOG.md"
 API_REQUESTS_FILE = AGENT_DIR / "api_requests.md"
 KNOWLEDGE_FILE    = AGENT_DIR / "knowledge.md"
+CHECKPOINT_FILE   = AGENT_DIR / "checkpoint.json"
 
 # Load API key from backend/.env
 load_dotenv(ROOT / "backend" / ".env")
@@ -352,6 +353,39 @@ def record_spend(input_tokens: int, output_tokens: int) -> float:
     return cost
 
 
+def seconds_until_midnight() -> int:
+    """Seconds until local midnight (start of next day)."""
+    now = datetime.now()
+    midnight = datetime(now.year, now.month, now.day)
+    from datetime import timedelta
+    midnight += timedelta(days=1)
+    return max(int((midnight - now).total_seconds()), 60)
+
+
+def save_checkpoint(task_description: str, progress: str):
+    """Save mid-task state so next session continues from here."""
+    data = {
+        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "task": task_description,
+        "progress": progress
+    }
+    CHECKPOINT_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def clear_checkpoint():
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
+
+
+def load_checkpoint() -> dict | None:
+    if CHECKPOINT_FILE.exists():
+        try:
+            return json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return None
+
+
 # ──────────────────────────────────────────────────────────────
 # DAILY REPORT
 # ──────────────────────────────────────────────────────────────
@@ -555,6 +589,17 @@ Be decisive. Research first. Build completely. Test rigorously. Commit only clea
 def build_context() -> str:
     parts = []
 
+    # Unfinished task from last session (budget ran out mid-work)
+    cp = load_checkpoint()
+    if cp:
+        parts.append(
+            f"## UNFINISHED TASK — RESUME THIS FIRST\n"
+            f"Last session ran out of budget mid-task on {cp['saved_at']}.\n"
+            f"**Task:** {cp['task']}\n"
+            f"**Progress made:** {cp['progress']}\n"
+            f"Continue from where it left off."
+        )
+
     # Backlog (priorities)
     if BACKLOG_FILE.exists():
         parts.append(f"## BACKLOG (your priorities)\n{BACKLOG_FILE.read_text(encoding='utf-8')}")
@@ -681,7 +726,16 @@ def run_session():
         # Mid-session budget check
         session_cost = total_in * cfg_live["input_cost_per_token"] + total_out * cfg_live["output_cost_per_token"]
         if spend + session_cost > limit:
-            print("Budget limit hit mid-session. Stopping.")
+            print("Budget limit hit mid-session. Saving checkpoint...")
+            # Extract what we were working on from the last tool call
+            last_tool = next(
+                (b.name for b in reversed(response.content) if b.type == "tool_use"),
+                "unknown"
+            )
+            save_checkpoint(
+                task_description="Mid-session when budget ran out — check backlog for active item",
+                progress=f"Was executing tool '{last_tool}' at turn {turn+1}. Review recent git log and backlog to determine exact state."
+            )
             break
 
         messages.append({"role": "assistant", "content": response.content})
@@ -777,6 +831,7 @@ def run_session():
                                               + metrics["next_session_hints"])[:5]
         GROWTH_FILE.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
+        clear_checkpoint()  # task finished cleanly — no resume needed
         print(f"\nDone: {summary}")
         if self_impr:
             print(f"Self-improved: {self_impr}")
@@ -851,5 +906,13 @@ if __name__ == "__main__":
                         f"\n---\n## {datetime.now().strftime('%Y-%m-%d %H:%M')} — CRASH\n"
                         f"Error: {e}\n"
                     )
-            print(f"\nSleeping {interval_h}h until next session...")
-            time.sleep(interval_h * 3600)
+
+            # Smart sleep: if budget exhausted sleep until midnight, else sleep interval
+            if get_today_spend() >= cfg["daily_limit_usd"]:
+                secs = seconds_until_midnight()
+                wake = datetime.now().fromtimestamp(time.time() + secs).strftime("%Y-%m-%d %H:%M")
+                print(f"\nBudget exhausted for today. Sleeping until midnight — resuming at {wake}")
+                time.sleep(secs)
+            else:
+                print(f"\nSleeping {interval_h}h until next session...")
+                time.sleep(interval_h * 3600)
