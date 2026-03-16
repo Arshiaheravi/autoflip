@@ -1006,12 +1006,18 @@ if __name__ == "__main__":
                         f"Error: {e}\n"
                     )
 
-            # Smart sleep: if budget exhausted sleep until midnight, else sleep interval
+            # Smart sleep:
+            # - Budget exhausted → sleep until midnight
+            # - Unfinished work (current_task.md exists) → run again in 30 min
+            # - Task completed cleanly → sleep full interval
             if get_today_spend() >= cfg["daily_limit_usd"]:
                 secs = seconds_until_midnight()
                 wake = datetime.now().fromtimestamp(time.time() + secs).strftime("%Y-%m-%d %H:%M")
-                print(f"\nBudget exhausted for today. Sleeping until midnight — resuming at {wake}")
+                print(f"\nBudget exhausted. Sleeping until midnight — resuming at {wake}")
                 time.sleep(secs)
+            elif CURRENT_TASK_FILE.exists():
+                print(f"\nUnfinished task detected. Resuming in 30 minutes...")
+                time.sleep(30 * 60)
             else:
                 print(f"\nSleeping {interval_h}h until next session...")
                 time.sleep(interval_h * 3600)
