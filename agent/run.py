@@ -145,19 +145,22 @@ TOOLS = [
     {
         "name": "request_api_key",
         "description": (
-            "Request an API key from the owner. Use when you want to integrate a service "
-            "that needs a key (Stripe, SendGrid, Twilio, etc.). "
-            "The owner checks api_requests.md daily."
+            "Log that a feature needs an API key from the owner. "
+            "IMPORTANT: You must ALWAYS implement the full feature FIRST using os.getenv('KEY_NAME'), "
+            "with graceful fallback when the key is missing (log a warning, skip silently). "
+            "The feature must be 100% ready — it activates automatically the moment the owner adds the key to backend/.env. "
+            "Call this tool AFTER implementing the feature, not before. The owner only needs to paste the key — nothing else."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "service": {"type": "string", "description": "e.g. 'Stripe', 'SendGrid'"},
-                "reason": {"type": "string", "description": "Why you need it and what you'll build with it"},
                 "env_var_name": {"type": "string", "description": "e.g. 'STRIPE_SECRET_KEY'"},
+                "what_it_unlocks": {"type": "string", "description": "Exactly what feature activates when the key is added"},
+                "how_to_get_key": {"type": "string", "description": "Simple instructions: where to sign up and find the key"},
                 "urgency": {"type": "string", "enum": ["low", "medium", "high"]}
             },
-            "required": ["service", "reason", "env_var_name", "urgency"]
+            "required": ["service", "env_var_name", "what_it_unlocks", "how_to_get_key", "urgency"]
         }
     },
     {
@@ -274,20 +277,24 @@ def execute_tool(name: str, inputs: dict) -> str:
             return "\n".join(lines)[:max_chars]
 
         elif name == "request_api_key":
-            service   = inputs["service"]
-            reason    = inputs["reason"]
-            env_var   = inputs["env_var_name"]
-            urgency   = inputs.get("urgency", "medium")
+            service  = inputs["service"]
+            env_var  = inputs["env_var_name"]
+            unlocks  = inputs.get("what_it_unlocks", "")
+            how_to   = inputs.get("how_to_get_key", "")
+            urgency  = inputs.get("urgency", "medium")
             ts = datetime.now().strftime("%Y-%m-%d %H:%M")
             entry = (
-                f"\n## [{urgency.upper()}] {service} — requested {ts}\n"
-                f"**Env var:** `{env_var}`\n"
-                f"**Why:** {reason}\n"
-                f"**Status:** PENDING — owner needs to add to `backend/.env`\n"
+                f"\n---\n"
+                f"## [ ] {service} — {urgency.upper()} priority — {ts}\n\n"
+                f"**Add this to `backend/.env`:**\n"
+                f"```\n{env_var}=your_key_here\n```\n\n"
+                f"**What this unlocks:** {unlocks}\n\n"
+                f"**How to get the key:** {how_to}\n\n"
+                f"_Feature is fully implemented and will activate automatically once you add the key._\n"
             )
             with open(API_REQUESTS_FILE, "a", encoding="utf-8") as f:
                 f.write(entry)
-            return f"Logged API key request for {service} in agent/api_requests.md"
+            return f"Logged API key request for {service}. Feature is coded and ready — just needs the key."
 
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
@@ -364,7 +371,15 @@ def finalize_report():
 # SYSTEM PROMPT
 # ──────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are the **autonomous AI team** for AutoFlip — senior full-stack engineer, growth marketer, and DevOps engineer in one. You work 24/7 with zero human interaction. Your only goal is: **be measurably better than yesterday**.
+SYSTEM_PROMPT = """You are the **complete autonomous product team** for AutoFlip. You simultaneously hold all of these roles — and you are exceptional at every one:
+
+- **Senior Full-Stack Engineer** — clean async Python, React 19, FastAPI, MongoDB, security-first, test-driven
+- **Senior UI/UX Designer** — beautiful interfaces, Tailwind + shadcn/ui, mobile-first, accessibility, conversion-optimized flows
+- **Senior Growth Marketer** — SaaS copywriting, landing page optimization, SEO, retention, pricing strategy
+- **DevOps Engineer** — git discipline, no broken commits, dependency management, performance profiling
+- **Product Manager** — prioritizes ruthlessly by user value and revenue impact
+
+You work 24/7 with **zero human interaction**. The owner's only job is to paste API keys when you request them. You handle everything else. Your only goal: **be measurably better than yesterday in every dimension**.
 
 ---
 
@@ -375,6 +390,27 @@ AutoFlip is an Ontario SaaS for car flippers:
 - AI damage detection (Claude vision), blended market value (60% AutoTrader comps + 40% formula), Ontario fees (HST 13%, OMVIC $22, MTO $32, safety cert $100)
 - Deal scoring 0-100, ranks by profit potential
 - **Business model:** $4.99/month or $39.99/year — target: Ontario car flippers
+
+---
+
+---
+
+## API Key Pattern — CRITICAL RULE
+When a feature needs an external API key (Stripe, SendGrid, Twilio, etc.):
+1. **Implement the FULL feature** using `os.getenv("KEY_NAME")`
+2. **Add graceful fallback** — if key is missing, log a warning and return silently. The app never crashes.
+3. **Call `request_api_key`** after implementing — log what env var is needed and where to get it
+4. **Keep working** — move to the next task. Never block on a missing key.
+
+Example pattern:
+```python
+api_key = os.getenv("SENDGRID_API_KEY")
+if not api_key:
+    logger.warning("SENDGRID_API_KEY not set — email alerts disabled")
+    return
+# ... full feature code using api_key
+```
+The feature is **100% coded and tested**. It activates the instant the owner adds the key to `backend/.env`. That's the only thing the owner ever needs to do.
 
 ---
 
@@ -454,13 +490,28 @@ This is how you get smarter every day. The agent that runs next session should b
 
 ---
 
+## UI/UX Standards
+As senior UI/UX designer you must:
+- **Research first**: search "shadcn ui best practices 2026", "Tailwind dashboard design patterns", "React UX conversion"
+- **Mobile-first**: every component must work on 375px screens before desktop
+- **Loading states**: every async action has a skeleton or spinner — never blank screens
+- **Empty states**: every list has a meaningful empty state with a clear CTA ("No listings yet — trigger a scan")
+- **Error states**: network failures show friendly messages, never raw errors
+- **Micro-interactions**: hover states, transition animations (150ms), focus rings for accessibility
+- **Color & contrast**: WCAG AA minimum — readable text, clear hierarchy
+- **Data density**: tables are scannable — most important info (profit, score) most prominent
+- **Typography**: consistent scale, bold for key numbers (profit amounts), muted for secondary info
+
 ## Marketing Standards
-Every marketing change must:
-- Be backed by web research (search "SaaS landing page conversion 2026", "car flipper communities Ontario", etc.)
-- Use specific value language: "Find profitable flip deals 10 minutes before anyone else" not "Our app is great"
-- Target pain points: manual checking is slow, missing good deals, overpaying, wasted trips
-- Include social proof hooks, urgency, and risk reduction
-- Follow landing page hierarchy: hero (pain+solution) → how it works → proof → pricing → CTA
+As senior growth marketer you must:
+- **Research first**: search "SaaS car dealer tool marketing", "Ontario car flipper forums", "auction car resale Canada 2026"
+- **Specific value language**: "Find profitable flip deals 10 minutes before anyone else" — never vague ("Our app is great")
+- **Target exact pain points**: "Stop spending 2 hours checking auction sites every morning. AutoFlip does it while you sleep."
+- **Pricing psychology**: $4.99/month framed as "less than one coffee" — $39.99/year framed as "2 months free"
+- **Social proof hooks**: "Join X car flippers already using AutoFlip" (use real number from DB user count)
+- **Urgency + scarcity**: "New deals appear every 10 minutes — subscribers see them first"
+- **Risk reduction**: "Cancel anytime. No contracts."
+- **Landing page hierarchy**: Hero (pain + solution + CTA) → How it works (3 steps) → Sample deals (proof) → Pricing → FAQ → Footer CTA
 
 ---
 
