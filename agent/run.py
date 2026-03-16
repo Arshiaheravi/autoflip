@@ -193,6 +193,28 @@ TOOLS = [
         }
     },
     {
+        "name": "run_experiment",
+        "description": (
+            "Test a hypothesis with automatic accept/reject (autoresearch pattern by Karpathy). "
+            "BEFORE modifying any file: call with action='baseline' to record current metric. "
+            "AFTER modifying: call with action='evaluate' — if metric improves, changes are kept and committed; "
+            "if metric regresses, changes are automatically git-reverted. "
+            "Use this for: deal scoring tweaks, scraper improvements, calculation changes, agent/run.py self-modifications. "
+            "This is how the agent makes safe, verified improvements instead of hopeful guesses."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hypothesis": {"type": "string", "description": "What you're testing: 'Adding mileage penalty should improve deal score accuracy'"},
+                "metric_command": {"type": "string", "description": "Shell command outputting a numeric metric, e.g. 'py -m pytest backend/tests/ -q --tb=no 2>&1 | grep -E \"passed|failed\"'"},
+                "action": {"type": "string", "enum": ["baseline", "evaluate"], "description": "baseline=record current state, evaluate=compare against baseline and decide"},
+                "higher_is_better": {"type": "boolean", "default": True, "description": "True if higher metric = better (tests passed). False if lower = better (error rate, cost)."},
+                "commit_message": {"type": "string", "description": "Git commit message if improvement accepted (required for evaluate action)"}
+            },
+            "required": ["hypothesis", "metric_command", "action"]
+        }
+    },
+    {
         "name": "update_current_task",
         "description": (
             "Track progress on the current task. Call this: "
@@ -497,6 +519,93 @@ def execute_tool(name: str, inputs: dict) -> str:
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
             return "Backlog updated."
+
+        elif name == "run_experiment":
+            import re as _re
+            hypothesis     = inputs["hypothesis"]
+            metric_cmd     = inputs["metric_command"]
+            action         = inputs["action"]
+            higher_better  = inputs.get("higher_is_better", True)
+            commit_msg     = inputs.get("commit_message", "")
+            exp_file       = AGENT_DIR / "experiment_baseline.json"
+
+            def extract_number(text: str) -> float | None:
+                nums = _re.findall(r"[-+]?\d+\.?\d*", text)
+                return float(nums[0]) if nums else None
+
+            # Run the metric command
+            r = subprocess.run(metric_cmd, shell=True, capture_output=True, text=True,
+                               timeout=120, cwd=str(ROOT), encoding="utf-8", errors="replace")
+            raw = (r.stdout + r.stderr).strip()
+            metric = extract_number(raw)
+
+            if action == "baseline":
+                data = {"hypothesis": hypothesis, "metric_cmd": metric_cmd,
+                        "baseline": metric, "raw": raw[:500],
+                        "higher_is_better": higher_better,
+                        "git_ref": subprocess.run(
+                            "git rev-parse HEAD", shell=True, capture_output=True,
+                            text=True, cwd=str(ROOT)
+                        ).stdout.strip()}
+                exp_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                return (f"Baseline recorded: metric={metric}\nRaw output: {raw[:300]}\n"
+                        f"Now make your changes, then call run_experiment with action='evaluate'.")
+
+            elif action == "evaluate":
+                if not exp_file.exists():
+                    return "ERROR: No baseline recorded. Call with action='baseline' first."
+                baseline_data = json.loads(exp_file.read_text(encoding="utf-8"))
+                baseline      = baseline_data.get("baseline")
+                git_ref       = baseline_data.get("git_ref", "")
+
+                if baseline is None or metric is None:
+                    return (f"Could not parse numeric metric.\nBaseline raw: {baseline_data.get('raw','')}\n"
+                            f"New raw: {raw[:300]}")
+
+                improved = (metric > baseline) if higher_better else (metric < baseline)
+                delta = metric - baseline
+
+                # Get current commit hash for results log
+                commit_hash = subprocess.run(
+                    "git rev-parse --short HEAD", shell=True, capture_output=True,
+                    text=True, cwd=str(ROOT)
+                ).stdout.strip()
+
+                # Log to experiment results TSV (autoresearch pattern)
+                tsv_path = AGENT_DIR / "experiment_results.tsv"
+                if not tsv_path.exists():
+                    tsv_path.write_text("commit\tmetric_before\tmetric_after\tdelta\tstatus\thypothesis\n", encoding="utf-8")
+
+                if improved:
+                    # Keep changes — commit them
+                    if commit_msg:
+                        execute_tool("run_command", {
+                            "command": f'git add -A && git commit -m "{commit_msg} [exp: {baseline:.3f}→{metric:.3f}]"',
+                            "timeout": 30
+                        })
+                        commit_hash = subprocess.run(
+                            "git rev-parse --short HEAD", shell=True, capture_output=True,
+                            text=True, cwd=str(ROOT)
+                        ).stdout.strip()
+                    status = "keep"
+                    with open(tsv_path, "a", encoding="utf-8") as tsv_f:
+                        tsv_f.write(f"{commit_hash}\t{baseline:.4f}\t{metric:.4f}\t{delta:+.4f}\t{status}\t{hypothesis[:80]}\n")
+                    exp_file.unlink(missing_ok=True)
+                    return (f"EXPERIMENT ACCEPTED. Metric: {baseline:.4f} → {metric:.4f} ({delta:+.4f})\n"
+                            f"Changes committed. Hypothesis confirmed: {hypothesis}")
+                else:
+                    # Revert — git checkout back to baseline ref
+                    execute_tool("run_command", {
+                        "command": f"git stash && git stash drop 2>/dev/null || git checkout -- .",
+                        "timeout": 30
+                    })
+                    status = "discard"
+                    with open(tsv_path, "a", encoding="utf-8") as tsv_f:
+                        tsv_f.write(f"{commit_hash}\t{baseline:.4f}\t{metric:.4f}\t{delta:+.4f}\t{status}\t{hypothesis[:80]}\n")
+                    exp_file.unlink(missing_ok=True)
+                    return (f"EXPERIMENT REJECTED. Metric: {baseline:.4f} → {metric:.4f} ({delta:+.4f})\n"
+                            f"Changes reverted to baseline. Try a different approach.\n"
+                            f"Review agent/experiment_results.tsv to avoid repeating failed hypotheses.")
 
         elif name == "save_skill":
             skill_name = inputs["name"].replace(" ", "_").lower()
@@ -814,6 +923,15 @@ Before touching a single file:
 - Write a clear 3-step plan before starting
 - Check for edge cases, error conditions, security implications
 
+### PHASE 2.5: Experiment Design (for any change that affects metrics)
+For changes to calculations, scrapers, or agent/run.py — use the experiment loop (Karpathy autoresearch pattern):
+```
+1. run_experiment(action="baseline", metric_command="py -m pytest backend/tests/ -q --tb=no")
+2. Make your changes
+3. run_experiment(action="evaluate", ...) → auto-keeps if better, auto-reverts if worse
+```
+This makes every modification safe. Never commit a regression.
+
 ### PHASE 3: Implement — commit small, track everything
 - **Before writing a single line**: call `update_current_task` with the full task name + all steps listed
 - **Mark the backlog item `[~]`** via `update_backlog` so next session knows it's in progress
@@ -948,6 +1066,20 @@ As senior growth marketer you must:
 
 ---
 
+## Simplicity Criterion (from Karpathy autoresearch)
+When evaluating whether to keep a change — weigh complexity cost against improvement magnitude:
+- Small improvement + ugly complexity = not worth it. Revert.
+- Small improvement + code deletion = definitely keep.
+- Equal performance + simpler code = keep. Simplification is a win.
+- Big improvement + any complexity = keep with good documentation.
+Apply this when using `run_experiment`: an experiment that adds 20 lines of hacky code for 0.1% improvement is a discard.
+
+## Autonomous Operation (never ask for permission)
+You run indefinitely. You do not stop to ask if you should continue.
+If you run out of obvious ideas, think harder: re-read knowledge.md, review experiment_results.tsv for patterns,
+try combining prior near-misses, read the failing tests for clues. The loop runs until budget is exhausted.
+The owner may be asleep. Work as if they are.
+
 Be decisive. Research first. Build completely. Test rigorously. Commit only clean code. Grow every session."""
 
 
@@ -1042,6 +1174,14 @@ def build_context() -> str:
         if hints:
             growth_summary += f"PRIORITY FROM LAST SESSION: {hints[0]['hint']}"
         parts.append(f"## Growth Metrics & Next Priority\n{growth_summary}")
+
+    # Experiment results log — what has been tried, what worked
+    exp_tsv = AGENT_DIR / "experiment_results.tsv"
+    if exp_tsv.exists():
+        lines = exp_tsv.read_text(encoding="utf-8").strip().splitlines()
+        if len(lines) > 1:
+            recent = "\n".join(lines[-10:])  # last 10 experiments
+            parts.append(f"## Experiment History (last 10 — don't repeat failed hypotheses)\n{recent}")
 
     # Skill library index — reusable patterns the agent has built up
     skills_index = SKILLS_DIR / "INDEX.md"
@@ -1170,11 +1310,61 @@ def run_session():
             "The product gets better when the agent gets smarter. Every hour on self-growth is worth 3 hours on features."
         )
     else:
+        # Specialist routing (agency-agents pattern): route session to a specialist based on backlog
+        # Cycle: scraper → calculations → ui → revenue → scraper → ...
+        # Override: if current_task.md exists, always resume it regardless of specialist
+        specialist_cycle = ["revenue", "scraper", "calculations", "ui", "revenue"]
+        specialist = specialist_cycle[session_num % len(specialist_cycle)]
+
+        specialist_directives = {
+            # Agency-agents pattern: each specialist has identity, mission, critical rules, deliverables, success metrics
+            "revenue": (
+                "**REVENUE SPECIALIST SESSION**\n"
+                "Identity: You are a Senior Monetization Engineer + Growth Marketer hybrid.\n"
+                "Mission: Turn AutoFlip into a revenue-generating machine. Every decision goes through: 'does this get more people to pay?'\n"
+                "Critical rules: Never break the free tier. Test payment flows in sandbox before any live config.\n"
+                "Priority: Stripe Checkout integration (top backlog). If done, pick next revenue item.\n"
+                "Deliverables: Working payment flow with sandbox test, webhook handler, user.plan update, confirmation UI.\n"
+                "Success metrics: User can click 'Go Pro' → complete Stripe checkout → account upgrades → no manual steps.\n"
+                "Tools: Use `run_experiment` for any pricing/conversion change. Use `save_skill` for Stripe patterns."
+            ),
+            "scraper": (
+                "**DATA SPECIALIST SESSION**\n"
+                "Identity: You are a Senior Web Scraping Engineer + Data Pipeline Architect.\n"
+                "Mission: Maximize the volume and quality of salvage vehicle data. More sources = more deals = more value.\n"
+                "Critical rules: Research ToS before scraping. Handle rate limits with exponential backoff. Never crash on HTML changes.\n"
+                "Priority: IAA Canada (https://www.iaai.com/vehiclesearch?lang=en_CA) or Copart Canada — research first.\n"
+                "Deliverables: New scraper module in backend/app/scrapers/, integrated into runner.py, at least 1 pytest test.\n"
+                "Success metrics: New source returns 10+ listings with price, title, URL. All existing tests still pass.\n"
+                "Tools: Use `run_experiment` baseline=listing count. Use `fetch_url` to inspect site HTML before coding."
+            ),
+            "calculations": (
+                "**DEAL INTELLIGENCE SPECIALIST SESSION**\n"
+                "Identity: You are a Senior Quantitative Analyst + Algorithm Engineer.\n"
+                "Mission: Make the deal scores so accurate that subscribers trust them completely.\n"
+                "Critical rules: ALWAYS use `run_experiment` — baseline test count, modify, evaluate, auto-revert if regression.\n"
+                "Priority: Mileage penalty in scoring, colour premium (black/white sell faster), or time-on-market decay.\n"
+                "Deliverables: Modified calculations.py, updated tests, experiment_results.tsv entry showing improvement.\n"
+                "Success metrics: More tests passing, deal scores better reflect real-world flip outcomes (check past deals).\n"
+                "Simplicity rule: A 1% scoring improvement that adds 20 lines of hacky code = discard. Simplification = always keep."
+            ),
+            "ui": (
+                "**UX SPECIALIST SESSION**\n"
+                "Identity: You are a Senior Frontend Engineer + Conversion Rate Optimizer.\n"
+                "Mission: Make the app so good-looking and easy to use that users upgrade just to keep using it.\n"
+                "Critical rules: Mobile-first (375px). Run `npm run build` before AND after every change. WCAG AA contrast.\n"
+                "Priority: Watchlist/saved listings, better mobile layout, price drop badge, or side-by-side comparison.\n"
+                "Deliverables: Working React component, Tailwind styling, empty/loading/error states, no build errors.\n"
+                "Success metrics: Feature works on 375px mobile, all existing frontend tests pass, build succeeds.\n"
+                "Tools: Use `save_skill` for any reusable React/Tailwind patterns."
+            ),
+        }
+        base_directive = specialist_directives.get(specialist, specialist_directives["revenue"])
         session_directive = (
-            "Pick ONE small, completable task (max 3-5 files changed). "
-            "If a backlog item is large, break it into the smallest shippable slice and do one slice. "
-            "Implement completely, validate all tests, commit, push, call task_complete. "
-            "Pace yourself — commit early, don't try to do everything at once."
+            f"{base_directive}\n\n"
+            "Pick ONE small, completable task (max 3-5 files). "
+            "Implement completely, validate, commit, push, call task_complete. "
+            "If a current_task.md exists — resume it first, specialist mode applies to next task after."
         )
     messages = [{
         "role": "user",
