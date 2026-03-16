@@ -45,6 +45,7 @@ BACKLOG_FILE      = AGENT_DIR / "BACKLOG.md"
 API_REQUESTS_FILE = AGENT_DIR / "api_requests.md"
 KNOWLEDGE_FILE    = AGENT_DIR / "knowledge.md"
 CHECKPOINT_FILE   = AGENT_DIR / "checkpoint.json"
+CURRENT_TASK_FILE = AGENT_DIR / "current_task.md"
 
 # Load API key from backend/.env
 load_dotenv(ROOT / "backend" / ".env")
@@ -166,6 +167,33 @@ TOOLS = [
         }
     },
     {
+        "name": "update_current_task",
+        "description": (
+            "Track progress on the current task. Call this: "
+            "(1) when you START a task — write what the full task is and list all steps, "
+            "(2) after each commit — mark that step done and note what remains, "
+            "(3) when task is fully done — call with status='done' to clear it. "
+            "This file is the first thing read next session so the agent resumes exactly here."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_name": {"type": "string", "description": "Short name of the task e.g. 'Auth system — JWT login'"},
+                "status": {"type": "string", "enum": ["in_progress", "done"], "description": "done clears the file"},
+                "completed_steps": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Steps already committed e.g. ['backend JWT auth route', 'user model']"
+                },
+                "remaining_steps": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Steps not yet done e.g. ['login page UI', 'protected route wrapper']"
+                },
+                "last_commit": {"type": "string", "description": "The last git commit message made for this task"}
+            },
+            "required": ["task_name", "status", "remaining_steps"]
+        }
+    },
+    {
         "name": "update_backlog",
         "description": (
             "Mark a backlog item as done, add new items, or reprioritize. "
@@ -182,10 +210,14 @@ TOOLS = [
     {
         "name": "task_complete",
         "description": (
-            "End the session. Call this ONLY after: (1) feature committed and pushed, "
-            "(2) knowledge.md updated with at least one lesson learned, "
-            "(3) agent/run.py improved if you spotted anything to make better. "
-            "These three things are non-negotiable every single session."
+            "End the session. Call this ONLY after ALL of: "
+            "(1) all steps committed and pushed, "
+            "(2) update_current_task called with status='done' (clears the tracker), "
+            "(3) backlog item marked [x] via update_backlog, "
+            "(4) knowledge.md updated with at least one lesson, "
+            "(5) agent/run.py improved if you spotted anything. "
+            "If the task is NOT fully done yet — do NOT call this. "
+            "Instead commit what you have, update current_task with remaining steps, and let the next session continue."
         ),
         "input_schema": {
             "type": "object",
@@ -312,6 +344,28 @@ def execute_tool(name: str, inputs: dict) -> str:
             with open(API_REQUESTS_FILE, "a", encoding="utf-8") as f:
                 f.write(entry)
             return f"Logged API key request for {service}. Feature is coded and ready — just needs the key."
+
+        elif name == "update_current_task":
+            if inputs.get("status") == "done":
+                if CURRENT_TASK_FILE.exists():
+                    CURRENT_TASK_FILE.unlink()
+                return "Current task cleared — task complete."
+            task_name  = inputs["task_name"]
+            completed  = inputs.get("completed_steps", [])
+            remaining  = inputs["remaining_steps"]
+            last_commit = inputs.get("last_commit", "")
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+            content = (
+                f"# Current Task — {task_name}\n"
+                f"_Last updated: {ts}_\n\n"
+                f"## Completed Steps (already committed)\n"
+                + ("\n".join(f"- [x] {s}" for s in completed) if completed else "- (none yet)\n")
+                + f"\n\n## Remaining Steps (do these next)\n"
+                + "\n".join(f"- [ ] {s}" for s in remaining)
+                + (f"\n\n## Last Commit\n`{last_commit}`\n" if last_commit else "")
+            )
+            CURRENT_TASK_FILE.write_text(content, encoding="utf-8")
+            return f"Task tracker updated. {len(completed)} done, {len(remaining)} remaining."
 
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
@@ -479,11 +533,15 @@ Before touching a single file:
 - Write a clear 3-step plan before starting
 - Check for edge cases, error conditions, security implications
 
-### PHASE 3: Implement
-- Write clean, async, secure, well-structured code
-- Follow existing patterns (async/await throughout, logger not print, type hints)
+### PHASE 3: Implement — commit small, track everything
+- **Before writing a single line**: call `update_current_task` with the full task name + all steps listed
+- **Mark the backlog item `[~]`** via `update_backlog` so next session knows it's in progress
+- **Commit after EVERY logical step** — never hold more than one step in uncommitted state
+- Each commit message: `agent: <feature> step N/M — <what this step does>`
+- After each commit: call `update_current_task` again to mark that step done and show remaining
+- This way: if budget runs out after any commit, next session reads current_task.md and picks up the next step
+- Write clean, async, secure code. Follow existing patterns (async/await, logger not print, type hints)
 - Every new backend function → add a test in backend/tests/
-- No half-done work. If you start it, finish it completely.
 
 ### PHASE 4: VALIDATE — NON-NEGOTIABLE (no commit without this)
 Run ALL of these after any backend change:
@@ -589,15 +647,23 @@ Be decisive. Research first. Build completely. Test rigorously. Commit only clea
 def build_context() -> str:
     parts = []
 
-    # Unfinished task from last session (budget ran out mid-work)
-    cp = load_checkpoint()
-    if cp:
+    # Active task tracker — resume this before anything else
+    if CURRENT_TASK_FILE.exists():
         parts.append(
-            f"## UNFINISHED TASK — RESUME THIS FIRST\n"
-            f"Last session ran out of budget mid-task on {cp['saved_at']}.\n"
-            f"**Task:** {cp['task']}\n"
-            f"**Progress made:** {cp['progress']}\n"
-            f"Continue from where it left off."
+            f"## RESUME THIS TASK FIRST — DO NOT START ANYTHING NEW\n"
+            f"{CURRENT_TASK_FILE.read_text(encoding='utf-8')}\n\n"
+            f"Pick the first unchecked remaining step and implement it. "
+            f"Commit it. Update current_task via update_current_task tool. "
+            f"Only start a new task when all remaining steps are done."
+        )
+
+    # Checkpoint from hard mid-session interrupt (budget hit)
+    cp = load_checkpoint()
+    if cp and not CURRENT_TASK_FILE.exists():
+        parts.append(
+            f"## CHECKPOINT — budget ran out mid-session on {cp['saved_at']}\n"
+            f"Was working on: {cp['task']}\n"
+            f"Progress: {cp['progress']}"
         )
 
     # Backlog (priorities)
@@ -673,7 +739,7 @@ def sync_state(label: str = "state"):
         "command": (
             "git add agent/activity_log.md agent/knowledge.md agent/BACKLOG.md "
             "agent/growth_metrics.json agent/daily_budget.json agent/checkpoint.json "
-            "agent/api_requests.md agent/reports/ 2>nul | true && "
+            "agent/current_task.md agent/api_requests.md agent/reports/ 2>nul & "
             f"git diff --cached --quiet || git commit -m \"agent: sync state — {label}\" && "
             "git push origin main"
         ),
