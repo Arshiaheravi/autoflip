@@ -647,7 +647,7 @@ def build_context() -> str:
         hints = m.get("next_session_hints", [])
         total = m.get("total_sessions", 0)
         cats  = m.get("categories", {})
-        last_self = m.get("self_improvements", [{}])[-1].get("what", "none yet")
+        last_self = (m.get("self_improvements") or [{}])[-1].get("what", "none yet")
         growth_summary = (
             f"Total sessions: {total} | Categories: {cats}\n"
             f"Last self-improvement: {last_self}\n"
@@ -861,7 +861,9 @@ def show_status():
         print(f"  Total API cost:  ${m['total_cost_usd']:.4f}")
         print(f"  By category:     {m['categories']}")
         if m.get("self_improvements"):
-            print(f"  Last self-improvement: {m['self_improvements'][-1]['what']}")
+            si = m.get("self_improvements")
+            if si:
+                print(f"  Last self-improvement: {si[-1]['what']}")
         if m.get("next_session_hints"):
             print(f"  Next priority: {m['next_session_hints'][0]['hint']}")
 
