@@ -26,4 +26,11 @@ export const settingsApi = {
   update: (data) => api.put('/settings', data),
 };
 
+export const authApi = {
+  register: (data) => api.post('/auth/register', data),
+  login: (data) => api.post('/auth/login', data),
+  me: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
+};
+
 export default api;

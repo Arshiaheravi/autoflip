@@ -10,6 +10,10 @@ echo.
 
 cd /d "%~dp0\.."
 
+echo Pulling latest state from GitHub...
+git pull origin main --rebase
+
+echo.
 echo Installing agent dependencies...
 py -m pip install -r agent\requirements.txt -q
 

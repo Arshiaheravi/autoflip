@@ -667,9 +667,27 @@ def build_context() -> str:
 # MAIN SESSION
 # ──────────────────────────────────────────────────────────────
 
+def sync_state(label: str = "state"):
+    """Push all agent state files to GitHub so any machine can resume."""
+    execute_tool("run_command", {
+        "command": (
+            "git add agent/activity_log.md agent/knowledge.md agent/BACKLOG.md "
+            "agent/growth_metrics.json agent/daily_budget.json agent/checkpoint.json "
+            "agent/api_requests.md agent/reports/ 2>nul | true && "
+            f"git diff --cached --quiet || git commit -m \"agent: sync state — {label}\" && "
+            "git push origin main"
+        ),
+        "timeout": 30
+    })
+
+
 def run_session():
     cfg_live = load_config()  # reload in case agent updated config
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Pull latest state from GitHub before starting (supports multi-machine)
+    execute_tool("run_command", {"command": "git pull origin main --rebase 2>&1 | tail -3", "timeout": 30})
+
     spend = get_today_spend()
     limit = cfg_live["daily_limit_usd"]
 
@@ -681,6 +699,7 @@ def run_session():
     if spend >= limit:
         print("Daily budget exhausted. Will resume tomorrow.")
         append_to_report(f"\n_Budget exhausted at {datetime.now().strftime('%H:%M')}. Resuming tomorrow._\n")
+        sync_state("budget exhausted")
         return
 
     context = build_context()
@@ -841,6 +860,7 @@ def run_session():
         append_to_report(f"\n## {ts_short} — INCOMPLETE\nSession cost: ${cost:.4f}\n")
 
     finalize_report()
+    sync_state(f"after session {ts_short}")
 
 
 # ──────────────────────────────────────────────────────────────
