@@ -157,6 +157,12 @@ After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move t
 - **`hasPriceDrop` and `priceDroplabel` helpers already existed in utils-app.js** — always check that file before implementing display logic. The backend fields (`has_price_drop`, `price_drop_amount`, `price_drop_pct`, `price_drop_only` filter) were also already in place. This session was purely a frontend wiring job.
 - **Stats grid can grow from 5 → 6 columns**: use `md:grid-cols-6` not `md:grid-cols-5` when adding a new stat card. Mobile stays 2-col automatically.
 
+### 2026-03-16 — UX Watchlist Session
+- **Hooks that use localStorage must be mocked in tests.** `useWatchlist` lives in utils-app.js and is imported by Dashboard — the jest.mock for `@/lib/utils-app` must include it or the component crashes at render time with a "hooks must be called inside a component" error.
+- **Adding a column to a CSS grid row requires updating both the row container AND the header row.** Desktop grid was `grid-cols-[…11 cols]` — adding a bookmark column required changing it to 12 cols in both `ListingRow` and the header div. Missing either causes misaligned columns.
+- **`e.stopPropagation()` is essential for buttons inside clickable rows.** Without it, clicking the bookmark button also opens the listing modal. Always add stopPropagation to nested interactive elements inside click-to-open containers.
+- **`fill` prop on lucide icons creates filled vs outline variants.** `<Bookmark fill="currentColor" />` renders a filled bookmark; `fill="none"` renders the outline. This is the cleanest way to show active/inactive state for icon-only buttons.
+
 ### 2026-03-16 — Deal Intelligence Session
 - **ROI tiers in calc_deal_score must match flipper economics**: A single ±1 ROI adjustment was too coarse — $2k profit on $2k car (100% ROI) and $2k profit on $20k car (10% ROI) got the same base score. Extended to: roi>100%→+2, roi>60%→+1, roi<-30%→-2, roi<-10%→-1. Two new tests added (225 total).
 - **run_experiment gate works best when changes add new tests**: The previous mileage experiment failed with delta=0 because it modified scores but no new tests were added to capture the expected new behavior. Always add tests that assert the specific new behavior — this makes the metric_after > metric_before clear.

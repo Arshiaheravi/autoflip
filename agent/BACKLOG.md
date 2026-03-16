@@ -18,7 +18,7 @@ picks the highest-value task, implements it, then updates this file.
 ## 🟡 MEDIUM PRIORITY — User Value
 
 - [x] **Price history tracking** — Backend tracks price_history array + has_price_drop/price_drop_amount fields. Frontend now shows ↓ $X (Y%) badge on cards (desktop + mobile), price drop stat card in stats bar, and "Price drops only" filter toggle.
-- [ ] **Watchlist / saved listings** — Let users click a ★ to save a listing. Persist in localStorage (no auth needed for v1). Show a "Saved" tab in Dashboard.
+- [x] **Watchlist / saved listings** — Bookmark button on every listing (desktop + mobile), localStorage persistence via useWatchlist hook, "Saved" tab with count badge and empty state. 42 tests passing.
 - [ ] **Side-by-side comparison** — Select 2-3 listings with checkboxes and open a comparison modal showing profit, mileage, damage, ROI side by side.
 - [ ] **Improved deal scoring** — Factor in mileage (high mileage = more risk), colour (black/white sell faster), and time on market when scoring deals.
 - [ ] **Better mobile layout** — The desktop table is hidden on mobile but the card view is basic. Add swipe gestures, better photo display, and a sticky filter bar.

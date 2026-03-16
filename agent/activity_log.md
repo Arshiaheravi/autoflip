@@ -138,3 +138,18 @@ IMPACT: Triples the data sources for car flippers. SalvageReseller aggregates ~1
 
 FILES: `backend/app/scrapers/salvagereseller.py`, `backend/app/scrapers/runner.py`, `backend/tests/test_salvagereseller.py`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/skills/auction_listing_scraper.py`, `agent/skills/INDEX.md`
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:36 — FEATURE [vscode]
+**Extended ROI tiers in `calc_deal_score` — added +2 bonus for roi>100% and -2 penalty for roi<-30%, replacing the previous single ±1 tier that was too coarse to differentiate capital-doubling deals from ordinary ones.**
+Impact: Car flippers can now trust scores to surface cheap cars with exceptional ROI (e.g., $2k on $2k purchase = score bump to 10) separately from expensive cars with the same dollar profit but 10x the capital risk. 225 tests passing (+2 new tests, experiment kept per gate criteria).
+Files: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/current_task.md`
+Output tail:
+---
+
+DONE: Extended ROI tiers in `calc_deal_score` — added +2 bonus for roi>100% and -2 penalty for roi<-30%, replacing the previous single ±1 tier that was too coarse to differentiate capital-doubling deals from ordinary ones.
+
+IMPACT: Car flippers can now trust scores to surface cheap cars with exceptional ROI (e.g., $2k on $2k purchase = score bump to 10) separately from expensive cars with the same dollar profit but 10x the capital risk. 225 tests passing (+2 new tests, experiment kept per gate criteria).
+
+FILES: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/current_task.md`
+Cost: $0.00 (VS Code mode)

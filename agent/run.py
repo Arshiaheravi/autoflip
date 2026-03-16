@@ -77,7 +77,7 @@ def load_config() -> dict:
     return defaults
 
 cfg = load_config()
-client = anthropic.Anthropic()
+client = None  # initialized only in API mode — never touched in VS Code mode
 
 # ──────────────────────────────────────────────────────────────
 # TOOLS
@@ -1698,6 +1698,9 @@ def sync_state(label: str = "state"):
 
 
 def run_session():
+    global client
+    if client is None:
+        client = anthropic.Anthropic()  # only created when API mode is actually used
     cfg_live = load_config()  # reload in case agent updated config
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 

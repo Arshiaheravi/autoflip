@@ -7,3 +7,4 @@ Reusable patterns saved by the agent. Check here before writing from scratch.
 - **fastapi_jwt_dependency** — FastAPI dependency that validates JWT and returns current user (`agent/skills/fastapi_jwt_dependency.py`)
 - **sendgrid_with_smtp_fallback** — Send email via SendGrid with SMTP fallback and silent fail if keys missing (`agent/skills/sendgrid_with_smtp_fallback.py`)
 - **auction_listing_scraper** — Paginated auction site scraper with crawl-delay, miles→km conversion, buy-now/bid price extraction, brand status mapping (`agent/skills/auction_listing_scraper.py`)
+- **localstorage_watchlist_hook** — React useWatchlist hook: toggle/isSaved/count backed by localStorage, with mock pattern for jest.mock, stopPropagation rule, and lucide fill trick (`agent/skills/localstorage_watchlist_hook.py`)
