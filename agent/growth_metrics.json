@@ -1,7 +1,19 @@
 {
-  "total_sessions": 0,
-  "total_cost_usd": 0.0,
-  "categories": {},
-  "self_improvements": [],
-  "next_session_hints": []
+  "total_sessions": 1,
+  "total_cost_usd": 5.376093,
+  "categories": {
+    "feature": 1
+  },
+  "self_improvements": [
+    {
+      "ts": "2026-03-16 03:56",
+      "what": "Added critical Python 3.14 lesson to knowledge.md: `asyncio.get_event_loop()` raises RuntimeError in test threads \u2014 must use `asyncio.run()`. Added full email alert pattern documentation, subscription flow notes, and the \"read before coding\" lesson (email service was partially implemented from a previous session). Updated validation commands to stay current."
+    }
+  ],
+  "next_session_hints": [
+    {
+      "ts": "2026-03-16 03:56",
+      "hint": "Next priority: Stripe payment integration \u2014 wire PricingPage Pro CTA to Stripe Checkout ($4.99/mo or $39.99/yr). The /api/auth/subscribe endpoint is already built and ready to receive webhook calls. Just needs Stripe checkout session creation + webhook handler."
+    }
+  ]
 }

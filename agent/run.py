@@ -167,6 +167,27 @@ TOOLS = [
         }
     },
     {
+        "name": "optimize_costs",
+        "description": (
+            "Update agent config to use a different model or settings for cost efficiency. "
+            "Use claude-haiku-4-5-20251001 for simple sessions (research, small edits, marketing copy). "
+            "Use claude-sonnet-4-6 for complex coding sessions. "
+            "This takes effect next session."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "enum": ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6"],
+                    "description": "Model to use next session"
+                },
+                "reason": {"type": "string", "description": "Why you're switching"}
+            },
+            "required": ["model", "reason"]
+        }
+    },
+    {
         "name": "update_current_task",
         "description": (
             "Track progress on the current task. Call this: "
@@ -345,6 +366,21 @@ def execute_tool(name: str, inputs: dict) -> str:
                 f.write(entry)
             return f"Logged API key request for {service}. Feature is coded and ready — just needs the key."
 
+        elif name == "optimize_costs":
+            model  = inputs["model"]
+            reason = inputs.get("reason", "")
+            cfg_data = load_config()
+            # Update pricing based on model
+            pricing_map = {
+                "claude-haiku-4-5-20251001":  {"input_cost_per_token": 0.8e-6,  "output_cost_per_token": 4e-6},
+                "claude-sonnet-4-6":           {"input_cost_per_token": 3e-6,    "output_cost_per_token": 15e-6},
+                "claude-opus-4-6":             {"input_cost_per_token": 15e-6,   "output_cost_per_token": 75e-6},
+            }
+            cfg_data["model"] = model
+            cfg_data.update(pricing_map.get(model, {}))
+            CONFIG_FILE.write_text(json.dumps(cfg_data, indent=2), encoding="utf-8")
+            return f"Model switched to {model}. Reason: {reason}. Takes effect next session."
+
         elif name == "update_current_task":
             if inputs.get("status") == "done":
                 if CURRENT_TASK_FILE.exists():
@@ -475,15 +511,55 @@ def finalize_report():
 # SYSTEM PROMPT
 # ──────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are the **complete autonomous product team** for AutoFlip. You simultaneously hold all of these roles — and you are exceptional at every one:
+SYSTEM_PROMPT = """You are a **fully autonomous, self-growing intelligence** — not just a coding assistant, but a complete organism that learns, adapts, and improves in every dimension without human interaction.
 
+You simultaneously hold all roles:
 - **Senior Full-Stack Engineer** — clean async Python, React 19, FastAPI, MongoDB, security-first, test-driven
-- **Senior UI/UX Designer** — beautiful interfaces, Tailwind + shadcn/ui, mobile-first, accessibility, conversion-optimized flows
-- **Senior Growth Marketer** — SaaS copywriting, landing page optimization, SEO, retention, pricing strategy
-- **DevOps Engineer** — git discipline, no broken commits, dependency management, performance profiling
-- **Product Manager** — prioritizes ruthlessly by user value and revenue impact
+- **Senior UI/UX Designer** — beautiful interfaces, Tailwind + shadcn/ui, mobile-first, accessibility, conversion-optimized
+- **Senior Growth Marketer** — SaaS copywriting, landing page optimization, SEO, retention, pricing psychology
+- **Financial Optimizer** — minimize API costs, maximize output per dollar, find smarter/cheaper approaches
+- **Research Scientist** — absorbs new knowledge from Anthropic docs, GitHub, tech blogs, applies it immediately
+- **Systems Architect** — improves your own architecture, decision-making, tools, and prompts every session
+- **DevOps Engineer** — git discipline, clean commits, dependency management
+- **Product Manager** — prioritizes by revenue impact and user value
 
-You work 24/7 with **zero human interaction**. The owner's only job is to paste API keys when you request them. You handle everything else. Your only goal: **be measurably better than yesterday in every dimension**.
+You work 24/7 with **zero human interaction**. The owner only pastes API keys. You handle everything else.
+**Your only goal: be measurably better than yesterday — in the product, in yourself, in efficiency, in knowledge.**
+
+---
+
+## DIMENSIONS OF GROWTH (all equally important)
+
+### 1. Product Growth
+Build features, fix bugs, improve UI/UX, add auction sources, improve calculations.
+
+### 2. Agent Self-Growth
+Improve agent/run.py — better tools, smarter prompts, better context loading, new capabilities.
+Every 3rd session minimum: read agent/run.py fully and find something to improve.
+
+### 3. Financial Intelligence
+**Every session, think about cost efficiency:**
+- Am I using the right model? Use `claude-haiku-4-5-20251001` for simple tasks (10x cheaper: $0.80/MTok vs $3/MTok)
+- Could I reduce context size? Long contexts cost more — trim what's not needed
+- Am I repeating expensive work? Cache it.
+- Check growth_metrics.json spend trend — if burning too fast, optimize
+- Update config.json model if a cheaper model can do the job equally well
+- Search "Anthropic API cost optimization 2026" periodically for new techniques
+
+### 4. Knowledge Absorption
+**Regularly search for and absorb:**
+- Anthropic release notes: new models, new features, prompt caching, tool improvements
+- Claude documentation updates: fetch https://docs.anthropic.com/en/docs/about-claude/models
+- GitHub trending repos in Python/React/FastAPI/AI agents
+- Claude skill MDs and CLAUDE.md patterns from other projects on GitHub
+- New scraping techniques, new Canadian auction sites
+- SaaS growth tactics, car flipper communities, Ontario auto market news
+- When you find something useful → update knowledge.md immediately
+
+### 5. Marketing Intelligence
+Research competitors, find new channels, improve copy, study what converts.
+
+---
 
 ---
 
@@ -702,10 +778,20 @@ def build_context() -> str:
         if "PENDING" in content:
             parts.append(f"## Pending API Key Requests (owner has not yet provided)\n{content}")
 
-    # Budget
+    # Budget + financial efficiency
     spend = get_today_spend()
     remaining = cfg["daily_limit_usd"] - spend
-    parts.append(f"## Budget\nSpent today: ${spend:.4f} / ${cfg['daily_limit_usd']:.2f}  |  Remaining: ${remaining:.4f}")
+    m = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
+    total_sessions = m.get("total_sessions", 1)
+    avg_cost = m.get("total_cost_usd", 0) / max(total_sessions, 1)
+    current_model = load_config().get("model", "claude-sonnet-4-6")
+    parts.append(
+        f"## Budget & Financial Intelligence\n"
+        f"Today: ${spend:.4f} spent / ${remaining:.4f} remaining (limit ${cfg['daily_limit_usd']:.2f})\n"
+        f"Avg cost/session: ${avg_cost:.4f} | Current model: {current_model}\n"
+        f"Models available: haiku ($0.80/MTok in, $4/MTok out) | sonnet ($3/$15) | opus ($15/$75)\n"
+        f"Consider switching to haiku for simpler sessions to stretch the daily budget further."
+    )
 
     # Last session's recommended next priority + all-time growth stats
     if GROWTH_FILE.exists():
@@ -769,17 +855,26 @@ def run_session():
         return
 
     context = build_context()
+    # Every 5th session: prioritize self-growth over product work
+    metrics = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
+    session_num = metrics.get("total_sessions", 0) + 1
+    if session_num % 5 == 0:
+        session_directive = (
+            f"This is session #{session_num} — a scheduled SELF-GROWTH session. "
+            "Prioritize the 🧠 AGENT SELF-GROWTH section in the backlog over product work. "
+            "Pick one: financial audit, absorb Anthropic docs, GitHub knowledge scan, or agent architecture review. "
+            "The product will benefit more from a smarter agent than from one more feature."
+        )
+    else:
+        session_directive = (
+            "Pick ONE small, completable task (max 3-5 files changed). "
+            "If a backlog item is large, break it into the smallest shippable slice and do one slice. "
+            "Implement completely, validate all tests, commit, push, call task_complete. "
+            "Pace yourself — commit early, don't try to do everything at once."
+        )
     messages = [{
         "role": "user",
-        "content": (
-            f"{context}\n\n"
-            "---\n\n"
-            "Pick ONE small, completable task (max 3-5 files changed). "
-            "If a backlog item is large (e.g. full auth system), break it into the smallest shippable slice "
-            "(e.g. just the backend route, or just the login form — not both at once). "
-            "Implement it completely, validate, commit, push, then call task_complete. "
-            "You have a budget of ~50 turns — pace yourself. Commit early."
-        )
+        "content": f"{context}\n\n---\n\n{session_directive}"
     }]
 
     total_in = 0

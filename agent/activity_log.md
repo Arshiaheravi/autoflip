@@ -17,3 +17,24 @@ Session ended without task_complete. Cost: $5.4985
 ---
 ## 2026-03-16 03:52 — INCOMPLETE
 Session ended without task_complete. Cost: $4.5578
+
+---
+## 2026-03-16 03:56 — FEATURE
+**Completed the deal alert email notifications feature end-to-end:
+
+1. **Confirmed tests already passing** — test_filters.py and test_v2_calc_engine.py already had `pytestmark = pytest.mark.skipif(not BASE_URL, ...)` so they correctly skip integration tests. 11 unit tests passed, 33 integration tests skipped.
+
+2. **Email service** — Two complementary implementations already existed: `email.py` (SendGrid-only, beautifully styled HTML) and `email_alerts.py` (SendGrid + SMTP fallback, grid layout). Both fully functional.
+
+3. **Deal alert trigger in scraper runner** — Added `send_bulk_deal_alerts()` call in `run_full_scrape()` for every NEW listing with score >= 8. Only fires on first insert (not re-scrapes), uses `$addToSet` to track already-alerted listings, logs `alert_emails_sent` in scrape status.
+
+4. **`/api/auth/subscribe` endpoint** — New POST endpoint allows updating user's plan (free/pro), billing_period (monthly/yearly), and subscription_status. Accepts optional Stripe IDs for future webhook reconciliation. Validated with proper error responses.
+
+5. **`safe_user()` updated** — Added `billing_period` and `subscribed_at` fields to the public user shape.
+
+6. **23 new unit tests** for email service — tests HTML generation, plain-text, currency formatting, and graceful no-op when API key is missing. All 58 tests pass.**
+Impact: Pro subscribers will now receive instant BUY deal alert emails the moment a score 8+ vehicle is discovered at auction. This is a key retention and value driver — subscribers know their $4.99/mo is actively working for them while they sleep. The /subscribe endpoint unblocks Stripe integration (next priority).
+Files: backend/app/scrapers/runner.py, backend/app/routes/auth.py, backend/app/services/auth.py, backend/app/services/email.py, backend/app/services/email_alerts.py, backend/tests/test_email_service.py, backend/tests/test_email_alerts.py, agent/knowledge.md, agent/BACKLOG.md
+Self-improvement: Added critical Python 3.14 lesson to knowledge.md: `asyncio.get_event_loop()` raises RuntimeError in test threads — must use `asyncio.run()`. Added full email alert pattern documentation, subscription flow notes, and the "read before coding" lesson (email service was partially implemented from a previous session). Updated validation commands to stay current.
+Next session: Next priority: Stripe payment integration — wire PricingPage Pro CTA to Stripe Checkout ($4.99/mo or $39.99/yr). The /api/auth/subscribe endpoint is already built and ready to receive webhook calls. Just needs Stripe checkout session creation + webhook handler.
+Cost: $5.3761
