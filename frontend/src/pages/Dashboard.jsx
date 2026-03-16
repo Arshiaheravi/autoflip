@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listingsApi, statsApi } from '@/lib/api';
-import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge, fmtDate } from '@/lib/utils-app';
+import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge, fmtDate, hasPriceDrop, priceDroplabel } from '@/lib/utils-app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,8 +9,8 @@ import ListingDetail from '@/components/shared/ListingDetail';
 import { useLanguage } from '@/lib/LanguageContext';
 import {
   Search, RefreshCw, ArrowUpDown, Car, Gauge, Wrench,
-  TrendingUp, AlertTriangle, SlidersHorizontal,
-  Target, X, Settings, CheckCircle2, Shield, Eye, Radio,
+  TrendingUp, TrendingDown, AlertTriangle, SlidersHorizontal,
+  Target, X, Settings, CheckCircle2, Shield, Eye, Radio, Tag,
 } from 'lucide-react';
 
 function StatCard({ label, value, icon: Icon, color }) {
@@ -50,9 +50,10 @@ function ListingRow({ listing, index, onClick }) {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold truncate" style={{ fontFamily: 'Barlow Condensed' }}>{l.title}</p>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {l.brand && <span className={`text-[9px] px-1.5 py-0.5 rounded-sm ${l.brand.toUpperCase().includes('SALVAGE') ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/10 text-emerald-500'}`}>{l.brand.toUpperCase().includes('SALVAGE') ? t('dashboard.salvageBadge') : t('dashboard.clean')}</span>}
               {l.status === 'coming_soon' && <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-purple-500/15 text-purple-400">{t('dashboard.comingSoonBadge')}</span>}
+              {hasPriceDrop(l) && <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-sm bg-teal-500/15 text-teal-400 font-semibold" title="Price dropped since first listed" data-testid="price-drop-badge"><TrendingDown className="h-2.5 w-2.5" />{priceDroplabel(l)}</span>}
             </div>
           </div>
         </div>
@@ -96,8 +97,9 @@ function ListingRow({ listing, index, onClick }) {
               <p className="text-sm font-bold truncate" style={{ fontFamily: 'Barlow Condensed' }}>{l.title}</p>
               {l.deal_label && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border shrink-0 ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10</span>}
             </div>
-            <div className="flex items-center gap-2 mt-1 text-xs">
+            <div className="flex items-center gap-2 mt-1 text-xs flex-wrap">
               <span className="font-bold font-data text-primary">{hasPrice ? fmt(l.price) : t('detail.tbd')}</span>
+              {hasPriceDrop(l) && <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-sm bg-teal-500/15 text-teal-400 font-semibold" data-testid="price-drop-badge-mobile"><TrendingDown className="h-2.5 w-2.5" />{priceDroplabel(l)}</span>}
               <span className="text-muted-foreground">{l.mileage ? `${fmtNum(l.mileage)} km` : ''}</span>
               <span className={`text-[9px] px-1 py-0.5 rounded-sm ${sourceColor(l.source)}`}>{sourceLabel(l.source).split(' ')[0]}</span>
               <span className="text-[10px] text-muted-foreground font-data ml-auto">{fmtDate(l.first_seen)}</span>
@@ -125,7 +127,7 @@ export default function Dashboard() {
   const [filters, setFilters] = useState({
     source: '', search: '', min_profit: '', max_price: '',
     min_score: '', damage_type: '', sort_by: 'deal_score', sort_order: 'desc',
-    status: '', brand_type: '',
+    status: '', brand_type: '', price_drop_only: false,
   });
 
   const fetchData = useCallback(async () => {
@@ -139,6 +141,7 @@ export default function Dashboard() {
       if (filters.damage_type) params.damage_type = filters.damage_type;
       if (filters.status) params.status = filters.status;
       if (filters.brand_type) params.brand_type = filters.brand_type;
+      if (filters.price_drop_only) params.price_drop_only = true;
       params.sort_by = filters.sort_by;
       params.sort_order = filters.sort_order;
       const [listRes, statsRes] = await Promise.all([listingsApi.getAll(params), statsApi.get()]);
@@ -162,12 +165,13 @@ export default function Dashboard() {
   return (
     <main className="max-w-[1600px] mx-auto px-4 md:px-8 py-6 space-y-5" data-testid="dashboard-page">
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="stats-bar">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3" data-testid="stats-bar">
           <StatCard label={t('dashboard.totalListings')} value={stats.total_listings} icon={Car} />
           <StatCard label={t('dashboard.buyDeals')} value={stats.buy_count} icon={Target} color="text-emerald-500" />
           <StatCard label={t('dashboard.watch')} value={stats.watch_count} icon={Eye} color="text-amber-500" />
           <StatCard label={t('dashboard.skip')} value={stats.skip_count} icon={X} color="text-red-500" />
           <StatCard label={t('dashboard.topProfit')} value={fmt(stats.top_profit || 0)} icon={TrendingUp} color="text-emerald-500" />
+          <StatCard label="Price Drops" value={stats.price_drop_count || 0} icon={TrendingDown} color="text-teal-400" />
         </div>
       )}
       {stats?.last_scrape && (
@@ -246,6 +250,17 @@ export default function Dashboard() {
           <FilterField label={t('dashboard.maxPrice')}><Input type="number" placeholder={t('dashboard.maxPricePlaceholder')} value={filters.max_price} onChange={(e) => updateFilter('max_price', e.target.value)} className="bg-background border-border/50 text-sm" data-testid="max-price-filter" /></FilterField>
           <FilterField label={t('dashboard.minScore')}><Input type="number" placeholder={t('dashboard.minScorePlaceholder')} value={filters.min_score} onChange={(e) => updateFilter('min_score', e.target.value)} className="bg-background border-border/50 text-sm" data-testid="min-score-filter" /></FilterField>
           <FilterField label={t('dashboard.damageType')}><Input placeholder={t('dashboard.damageTypePlaceholder')} value={filters.damage_type} onChange={(e) => updateFilter('damage_type', e.target.value)} className="bg-background border-border/50 text-sm" data-testid="damage-filter" /></FilterField>
+          <FilterField label="Price Drops">
+            <button
+              type="button"
+              onClick={() => updateFilter('price_drop_only', !filters.price_drop_only)}
+              className={`flex items-center gap-2 h-9 px-3 rounded-sm border text-sm transition-colors ${filters.price_drop_only ? 'bg-teal-500/15 border-teal-500/30 text-teal-400' : 'bg-background border-border/50 text-muted-foreground hover:text-foreground'}`}
+              data-testid="price-drop-filter"
+            >
+              <TrendingDown className="h-3.5 w-3.5" />
+              Price drops only
+            </button>
+          </FilterField>
         </div>
       )}
       {loading && (

@@ -62,6 +62,8 @@ jest.mock('@/lib/utils-app', () => ({
   sourceLabel: (v) => v,
   sourceColor: () => '',
   scoreBadge: () => ({ label: 'WATCH', color: '' }),
+  hasPriceDrop: () => false,
+  priceDroplabel: () => null,
 }));
 
 import Dashboard from './Dashboard';
