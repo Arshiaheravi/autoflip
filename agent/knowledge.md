@@ -70,6 +70,49 @@ cp -r frontend/src /tmp/autoflip-fe/src && NODE_ENV=test PATH="/c/Program Files/
 - `safe_user()` now returns `billing_period` and `subscribed_at` fields
 - Stripe webhook handler just needs to call this endpoint (or directly call `db.users.update_one`) — all fields already exist
 
+## Self-Improvement Research (2026-03-16)
+
+Key findings from real papers — apply these techniques actively:
+
+### Reflexion (Shinn et al., NeurIPS 2023) — PROVEN: 80% → 91% on HumanEval
+- After every failure: generate a verbal critique (what went wrong, why, what to do differently)
+- Store critique in memory → next attempt reads it → avoids repeating the exact same mistake
+- "Verbal gradients" are more informative than scalar rewards — write specific lessons not generic ones
+- Already implemented: `write_post_mortem` tool stores root_cause + prevention rule to knowledge.md
+
+### Voyager (Wang et al., 2023) — PROVEN: 3.1x more capability, 15x faster milestone completion
+- Skills as executable code > skills as prompts — code is testable, composable, doesn't degrade
+- Three-gate validation before storing a skill: (1) executes without error, (2) achieves desired state, (3) peer review
+- Skills retrieved by embedding similarity — describe each skill well so retrieval finds it
+- Already implemented: `save_skill` tool + `agent/skills/` + `agent/skills/INDEX.md`
+
+### Live-SWE-agent (2025) — PROVEN: 77.4% SWE-bench at near-zero cost vs DGM's 53.3% at 1,231 GPU-hours
+- Starting with only bash tools, the agent creates custom tools at runtime as it needs them
+- Custom tools provide better error messages than generic bash → richer feedback → faster learning
+- Runtime tool creation > offline evolutionary search for most production use cases
+- Lesson: when a task is hard with current tools, consider adding a new specialized tool to run.py
+
+### Reflexion + Few-Shot Exemplars — PROVEN: 73% → 93% on ALFWorld
+- Store successful task trajectories as exemplars
+- When starting a similar new task, retrieve the relevant past trajectory as a few-shot example
+- Already implemented: auto-stored in `agent/trajectories.md` on every successful `task_complete`
+
+### Prompt Caching (Anthropic) — can reduce cost 80%+
+- System prompt + knowledge.md repeated every turn = the biggest cost driver in long sessions
+- Implement prompt caching: mark system prompt as cacheable using cache_control breakpoints
+- See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+- This is in research_queue.md as HIGH priority — implement it in next self-growth session
+
+### External Verifiers > Self-Evaluation
+- When ground truth exists (test pass/fail, benchmark scores), use it — don't rely on LLM self-assessment
+- `run_health_check` already implements this — call it before EVERY task_complete
+- If health score < 3, fix the regressions before completing
+
+### Conservative Acceptance Gates
+- Every self-modification system that works has a gate: only accept changes that improve measurable metrics
+- When modifying agent/run.py: verify the change actually helps by checking health_score trend in HEALTH_LOG_FILE
+- Never make multiple speculative changes at once — change one thing, verify it, then change another
+
 ## Lessons Learned
 
 ### 2026-03-16 — Session 3

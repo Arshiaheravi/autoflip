@@ -48,6 +48,9 @@ CHECKPOINT_FILE      = AGENT_DIR / "checkpoint.json"
 CURRENT_TASK_FILE    = AGENT_DIR / "current_task.md"
 RESEARCH_QUEUE_FILE  = AGENT_DIR / "research_queue.md"
 HEALTH_LOG_FILE      = AGENT_DIR / "health_log.json"
+SKILLS_DIR           = AGENT_DIR / "skills"
+TRAJECTORIES_FILE    = AGENT_DIR / "trajectories.md"
+SKILLS_DIR.mkdir(exist_ok=True)
 
 # Load API key from backend/.env
 load_dotenv(ROOT / "backend" / ".env")
@@ -231,6 +234,25 @@ TOOLS = [
         }
     },
     {
+        "name": "save_skill",
+        "description": (
+            "Save a reusable code pattern to the persistent skill library (Voyager pattern). "
+            "Call this whenever you write something reusable: a scraper helper, an API pattern, "
+            "a MongoDB query, a React hook, a validation utility, a retry wrapper. "
+            "Skills are stored as Python files in agent/skills/ and shown in future sessions. "
+            "An agent with a growing skill library compounds capability — each skill stands on prior skills."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short snake_case name, e.g. 'mongodb_upsert_pattern'"},
+                "description": {"type": "string", "description": "One line: what this does and when to use it"},
+                "code": {"type": "string", "description": "The reusable Python (or JS) code snippet, fully self-contained"}
+            },
+            "required": ["name", "description", "code"]
+        }
+    },
+    {
         "name": "add_to_research_queue",
         "description": (
             "Add a topic to the autonomous research queue. Call this whenever you encounter something you don't know well enough: "
@@ -290,13 +312,18 @@ TOOLS = [
             "(3) backlog item marked [x] via update_backlog, "
             "(4) knowledge.md updated with at least one lesson, "
             "(5) run_health_check passed (no regressions), "
-            "(6) agent/run.py improved if you spotted anything. "
+            "(6) save_skill called for any reusable pattern you wrote, "
+            "(7) agent/run.py improved if you spotted anything. "
             "If the task is NOT fully done yet — do NOT call this. "
             "Instead commit what you have, update current_task with remaining steps, and let the next session continue."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "task_name": {
+                    "type": "string",
+                    "description": "Short name matching the backlog item, e.g. 'Stripe Checkout integration'"
+                },
                 "summary": {
                     "type": "string",
                     "description": "What was built/fixed this session."
@@ -470,6 +497,22 @@ def execute_tool(name: str, inputs: dict) -> str:
         elif name == "update_backlog":
             BACKLOG_FILE.write_text(inputs["content"], encoding="utf-8")
             return "Backlog updated."
+
+        elif name == "save_skill":
+            skill_name = inputs["name"].replace(" ", "_").lower()
+            description = inputs["description"]
+            code = inputs["code"]
+            skill_path = SKILLS_DIR / f"{skill_name}.py"
+            content = f'"""\n{description}\n\nSaved by agent on {datetime.now().strftime("%Y-%m-%d")}.\n"""\n\n{code}\n'
+            skill_path.write_text(content, encoding="utf-8")
+            # Update skills index
+            index_path = SKILLS_DIR / "INDEX.md"
+            index = index_path.read_text(encoding="utf-8") if index_path.exists() else "# Skill Library\n\nReusable patterns saved by the agent.\n\n"
+            entry = f"- **{skill_name}** — {description} (`agent/skills/{skill_name}.py`)\n"
+            if skill_name not in index:
+                index += entry
+                index_path.write_text(index, encoding="utf-8")
+            return f"Skill '{skill_name}' saved to agent/skills/{skill_name}.py"
 
         elif name == "add_to_research_queue":
             topic    = inputs["topic"]
@@ -824,6 +867,11 @@ Append at least one concrete, specific lesson to `agent/knowledge.md`:
 - "IAA Canada needs a session cookie from homepage before search works"
 If something took more than 3 turns to fix → write a `write_post_mortem`. This is how the agent gets smarter.
 
+**Step A2 — Skill library** (Voyager pattern — whenever you write something reusable):
+If you wrote a helper function, a scraper pattern, an API integration pattern, a MongoDB query pattern,
+or a React hook — call `save_skill`. The skill library compounds: future sessions don't rewrite from scratch.
+Check the Skill Library section in context first — it may already have what you need.
+
 **Step B — Research queue** (whenever you noticed a gap):
 Did anything make you think "I should know more about this"? Call `add_to_research_queue`.
 Examples: a library you used without fully understanding, a competitor you heard of, a technique that might help.
@@ -994,6 +1042,19 @@ def build_context() -> str:
         if hints:
             growth_summary += f"PRIORITY FROM LAST SESSION: {hints[0]['hint']}"
         parts.append(f"## Growth Metrics & Next Priority\n{growth_summary}")
+
+    # Skill library index — reusable patterns the agent has built up
+    skills_index = SKILLS_DIR / "INDEX.md"
+    if skills_index.exists():
+        idx = skills_index.read_text(encoding="utf-8").strip()
+        if len(idx) > 100:
+            parts.append(f"## Skill Library (reusable patterns — use these before writing from scratch)\n{idx}")
+
+    # Recent successful trajectories — what approaches worked before (Reflexion exemplar pattern)
+    if TRAJECTORIES_FILE.exists():
+        traj = TRAJECTORIES_FILE.read_text(encoding="utf-8")
+        if len(traj) > 100:
+            parts.append(f"## Recent Successful Approaches (learn from these — don't reinvent)\n{traj[-2500:]}")
 
     # Research queue — topics to learn
     if RESEARCH_QUEUE_FILE.exists():
@@ -1229,6 +1290,7 @@ def run_session():
         files        = task_result.get("files_changed", [])
         self_impr    = task_result.get("self_improvement", "")
         next_hint    = task_result.get("next_session_hint", "")
+        task_name_for_traj = task_result.get("task_name", summary[:60])
 
         # Activity log
         log_entry = f"\n---\n## {ts_short} — {category.upper().replace('_',' ')}\n**{summary}**\n"
@@ -1271,6 +1333,22 @@ def run_session():
             metrics["self_critique_history"].append({"ts": ts_short, **self_critique})
             metrics["self_critique_history"] = metrics["self_critique_history"][-10:]
         GROWTH_FILE.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+        # Auto-store trajectory (Reflexion/SAGE pattern — successful approaches as future exemplars)
+        traj_entry = (
+            f"\n---\n## {ts_short} — {category}\n"
+            f"**Task:** {task_name_for_traj}\n"
+            f"**Approach:** {summary}\n"
+            f"**Why it worked:** {impact}\n"
+        )
+        if not hasattr(task_result, '__trajectory_saved'):
+            with open(TRAJECTORIES_FILE, "a", encoding="utf-8") as traj_f:
+                traj_f.write(traj_entry)
+            # Keep file from growing unbounded
+            if TRAJECTORIES_FILE.exists():
+                lines = TRAJECTORIES_FILE.read_text(encoding="utf-8").split("\n---\n")
+                if len(lines) > 30:
+                    TRAJECTORIES_FILE.write_text("\n---\n".join(lines[-25:]), encoding="utf-8")
 
         clear_checkpoint()  # task finished cleanly — no resume needed
         print(f"\nDone: {summary}")
