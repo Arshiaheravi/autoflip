@@ -30,11 +30,11 @@ const FAQ = [
   },
   {
     q: 'What auctions does AutoFlip monitor?',
-    a: 'Currently Cathcart Auto (Rebuilders + Used) and Pic N Save in Ontario. We're adding IAA Canada and Copart Canada next.',
+    a: "Currently Cathcart Auto (Rebuilders + Used) and Pic N Save in Ontario. We're adding IAA Canada and Copart Canada next.",
   },
   {
     q: 'Do I need a dealer license?',
-    a: 'No. AutoFlip only shows vehicles that don't require a dealer license to purchase — perfect for private flippers in Ontario.',
+    a: "No. AutoFlip only shows vehicles that don't require a dealer license to purchase — perfect for private flippers in Ontario.",
   },
   {
     q: 'Can I cancel anytime?',

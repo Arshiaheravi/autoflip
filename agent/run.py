@@ -631,7 +631,12 @@ py -m py_compile backend/app/routes/scrape.py
 ```
 **If any check fails → fix it. Never commit broken code. Ever.**
 
-For frontend changes, check for obvious syntax errors by reading the file back.
+For frontend changes, ALWAYS run a build check before committing:
+```
+cd frontend && PATH="/c/Program Files/nodejs:$PATH" "C:\\Program Files\\nodejs\\npm.cmd" run build 2>&1 | tail -20
+```
+**If `npm run build` reports ANY error → fix it before committing. Never commit broken JSX/JS. Ever.**
+Common JSX pitfalls: unescaped apostrophes in single-quoted strings (`We're` → `"We're"`), unescaped `<`/`>` in JSX text, missing closing tags.
 
 ### PHASE 5: Commit & Push
 Only after ALL checks pass:

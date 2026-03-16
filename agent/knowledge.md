@@ -36,6 +36,9 @@ py -m pytest backend/tests/ -x -q --tb=short
 
 # Compile-check a single file
 py -m py_compile backend/app/routes/scrape.py
+
+# Frontend build check (MANDATORY before any frontend commit — catches JSX syntax errors)
+cd frontend && PATH="/c/Program Files/nodejs:$PATH" "C:\Program Files\nodejs\npm.cmd" run build 2>&1 | tail -20
 ```
 
 ## Known Issues / Watch Out For
@@ -58,6 +61,9 @@ py -m py_compile backend/app/routes/scrape.py
 - Stripe webhook handler just needs to call this endpoint (or directly call `db.users.update_one`) — all fields already exist
 
 ## Lessons Learned
+
+### 2026-03-16 — Session 3
+- **Always run `npm run build` before committing any frontend file.** JSX syntax errors (unescaped apostrophes in single-quoted JS strings: `'We're'` → `"We're"`) only surface at build time, not in the editor. The fix: use double quotes around strings containing apostrophes, or use `&apos;` in JSX string literals.
 
 ### 2026-03-16 — Session 2
 - **Read before coding**: Email service and tests were partially implemented from a previous session. Always check `backend/app/services/` and `backend/tests/` before implementing "new" features.
