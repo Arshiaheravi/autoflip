@@ -994,6 +994,31 @@ cp -r frontend/src /tmp/autoflip-fe/src && NODE_ENV=test PATH="/c/Program Files/
 **If EITHER check fails → fix it before committing. Never commit broken code. Ever.**
 Common JSX pitfalls: unescaped apostrophes in single-quoted strings (`We're` → `"We're"`), unescaped `<`/`>` in JSX text, missing closing tags.
 
+#### INTEGRATION COMPLETENESS CHECKLIST — run through this before every commit:
+**New scraper added?**
+- [ ] `sourceLabel()` in frontend/src/lib/utils-app.js includes the new source key
+- [ ] `sourceColor()` in frontend/src/lib/utils-app.js includes the new source key
+- [ ] `<SelectItem>` added to source filter dropdown in Dashboard.jsx
+- [ ] Source count shown in stats bar in Dashboard.jsx
+- [ ] Frontend build passes after these changes
+
+**New backend field added?**
+- [ ] Field rendered in Dashboard.jsx listing cards
+- [ ] Field rendered in ListingDetail.jsx detail modal
+- [ ] Field included in backend tests
+
+**New route/endpoint added?**
+- [ ] Route is reachable: `curl -s http://localhost:8001/api/<route>`
+- [ ] Frontend calls the new endpoint where needed
+
+**Any change at all?**
+- [ ] Backend imports OK
+- [ ] All tests pass
+- [ ] Frontend build passes
+- [ ] git push completed — verify with `git log --oneline -3`
+
+DO NOT write DONE block until every applicable checkbox above is confirmed green.
+
 ### PHASE 5: Commit & Push
 Only after ALL checks pass:
 ```
@@ -1588,6 +1613,21 @@ PHASE 2.5 — Experiment design: for calculation/scraper/agent changes, use run_
 PHASE 3 — Implement: call update_current_task first. Commit after each logical step.
 PHASE 3.5 — Dev-QA retry: if health_check fails, fix it. Max 3 attempts. Escalate to backlog if still failing.
 PHASE 4 — Validate: run import check + tests + frontend build before every commit.
+  INTEGRATION COMPLETENESS — verify ALL that apply before committing:
+  New scraper?
+    → sourceLabel() + sourceColor() in frontend/src/lib/utils-app.js
+    → <SelectItem> in source filter in Dashboard.jsx
+    → source count in stats bar in Dashboard.jsx
+    → frontend build passes
+  New backend field?
+    → renders in Dashboard.jsx cards AND ListingDetail.jsx modal
+    → covered by a backend test
+  Any change?
+    → py -c "import sys; sys.path.insert(0,'backend'); from app.main import app; print('OK')"
+    → py -m pytest backend/tests/ -q --tb=no 2>&1 | tail -3
+    → cd frontend && "C:\\Program Files\\nodejs\\npm.cmd" run build 2>&1 | tail -5
+    → git push completed — confirm with git log --oneline -3
+  DO NOT write DONE block until every applicable item above is confirmed.
 PHASE 5 — Commit & push: git add -A && git commit && git push.
 PHASE 6 — Self-reflect & grow (MANDATORY, NO EXCEPTIONS):
   A. Append a concrete lesson to agent/knowledge.md

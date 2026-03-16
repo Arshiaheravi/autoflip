@@ -206,7 +206,7 @@ export default function Dashboard() {
             {t('dashboard.lastScan')} {stats.last_scrape.finished_at ? new Date(stats.last_scrape.finished_at).toLocaleString() : t('dashboard.running')}
           </div>
           <Separator orientation="vertical" className="h-3 bg-border/50" />
-          <div>{t('dashboard.sources')} Cathcart Rebuilders ({stats.source_counts?.cathcart_rebuilders || 0}), Used ({stats.source_counts?.cathcart_used || 0}), Pic N Save ({stats.source_counts?.picnsave || 0})</div>
+          <div>{t('dashboard.sources')} Cathcart Rebuilders ({stats.source_counts?.cathcart_rebuilders || 0}), Used ({stats.source_counts?.cathcart_used || 0}), Pic N Save ({stats.source_counts?.picnsave || 0}), SalvageReseller ({stats.source_counts?.salvagereseller || 0})</div>
           {stats.best_deal && (
             <>
               <Separator orientation="vertical" className="h-3 bg-border/50" />
@@ -235,7 +235,7 @@ export default function Dashboard() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('dashboard.allTitles')}</SelectItem>
-            <SelectItem value="salvage">{t('dashboard.salvage')}</SelectItem>
+            <SelectItem value="salvagereseller">SalvageReseller</SelectItem>
             <SelectItem value="clean">{t('dashboard.clean')}</SelectItem>
             <SelectItem value="rebuilt">{t('dashboard.rebuilt')}</SelectItem>
           </SelectContent>

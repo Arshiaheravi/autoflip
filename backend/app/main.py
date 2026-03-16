@@ -11,6 +11,7 @@ from .routes.listings import router as listings_router
 from .routes.scrape import router as scrape_router
 from .routes.settings import router as settings_router
 from .routes.auth import router as auth_router
+from .routes.stripe_routes import router as stripe_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -21,6 +22,7 @@ api_router.include_router(listings_router)
 api_router.include_router(scrape_router)
 api_router.include_router(settings_router)
 api_router.include_router(auth_router)
+api_router.include_router(stripe_router)
 
 
 @api_router.get("/")

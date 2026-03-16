@@ -153,3 +153,18 @@ IMPACT: Car flippers can now trust scores to surface cheap cars with exceptional
 
 FILES: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/current_task.md`
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 17:43 — FEATURE [vscode]
+**Implemented watchlist/saved listings — bookmark button on every listing row (desktop + mobile), `useWatchlist` localStorage hook, "Saved" tab with count badge, and saved empty state with CTA.**
+Impact: Users can now star deals they want to track and return to a filtered "Saved" view instantly — no login required, zero backend cost. Reduces decision friction and increases daily retention (users have a reason to return to their saved list).
+Files: `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`, `agent/skills/localstorage_watchlist_hook.py`, `agent/skills/INDEX.md`
+Output tail:
+---
+
+DONE: Implemented watchlist/saved listings — bookmark button on every listing row (desktop + mobile), `useWatchlist` localStorage hook, "Saved" tab with count badge, and saved empty state with CTA.
+
+IMPACT: Users can now star deals they want to track and return to a filtered "Saved" view instantly — no login required, zero backend cost. Reduces decision friction and increases daily retention (users have a reason to return to their saved list).
+
+FILES: `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`, `agent/skills/localstorage_watchlist_hook.py`, `agent/skills/INDEX.md`
+Cost: $0.00 (VS Code mode)

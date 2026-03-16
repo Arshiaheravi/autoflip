@@ -17,6 +17,8 @@ HEADERS = {
 
 async def detect_damage_from_photo(photo_urls, source: str = "", brand_status: str = "") -> dict:
     """Use Claude vision to analyze multiple car photos and detect damage type + severity."""
+    # Disabled — returns empty result, no API calls made
+    return {"damage": "", "severity": "unknown", "confidence": 0}
     if not ANTHROPIC_API_KEY:
         return {"damage": "", "severity": "unknown", "confidence": 0}
 

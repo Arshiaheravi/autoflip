@@ -11,7 +11,7 @@ export function fmtNum(value) {
 }
 
 export function sourceLabel(source) {
-  return { cathcart_rebuilders: 'Cathcart Rebuilders', cathcart_used: 'Cathcart Used', picnsave: 'Pic N Save' }[source] || source;
+  return { cathcart_rebuilders: 'Cathcart Rebuilders', cathcart_used: 'Cathcart Used', picnsave: 'Pic N Save', salvagereseller: 'SalvageReseller' }[source] || source;
 }
 
 export function sourceColor(source) {
@@ -19,6 +19,7 @@ export function sourceColor(source) {
     cathcart_rebuilders: 'bg-blue-500/15 text-blue-400',
     cathcart_used: 'bg-violet-500/15 text-violet-400',
     picnsave: 'bg-amber-500/15 text-amber-400',
+    salvagereseller: 'bg-orange-500/15 text-orange-400',
   }[source] || 'bg-zinc-500/15 text-zinc-400';
 }
 
