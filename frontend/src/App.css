@@ -1,1 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap');
+
 .App { min-height: 100vh; background: #09090b; }
+
+[dir="rtl"] {
+  font-family: 'Vazirmatn', sans-serif;
+}

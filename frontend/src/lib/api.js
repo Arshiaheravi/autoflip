@@ -8,6 +8,7 @@ const api = axios.create({ baseURL: API, headers: { 'Content-Type': 'application
 export const listingsApi = {
   getAll: (params = {}) => api.get('/listings', { params }),
   getOne: (id) => api.get(`/listings/${id}`),
+  getPriceHistory: (id) => api.get(`/listings/${id}/price-history`),
 };
 
 export const statsApi = {

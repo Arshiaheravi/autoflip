@@ -1,0 +1,8 @@
+{
+  "model": "claude-sonnet-4-6",
+  "daily_limit_usd": 10.0,
+  "interval_hours": 4,
+  "session_max_turns": 50,
+  "input_cost_per_token": 3e-6,
+  "output_cost_per_token": 15e-6
+}

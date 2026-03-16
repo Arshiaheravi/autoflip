@@ -44,3 +44,20 @@ export function fmtDate(dateStr) {
   if (diffD < 7) return `${diffD}d ago`;
   return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
 }
+
+/**
+ * Returns true if the listing has recorded a price drop.
+ */
+export function hasPriceDrop(listing) {
+  return listing?.has_price_drop === true && (listing?.price_drop_amount || 0) > 0;
+}
+
+/**
+ * Returns a short human-readable price-drop label, e.g. "↓ $500 (8%)"
+ */
+export function priceDroplabel(listing) {
+  const amt = listing?.price_drop_amount || 0;
+  const pct = listing?.price_drop_pct || 0;
+  if (!amt) return null;
+  return `↓ $${Math.abs(amt).toLocaleString('en-CA')} (${Math.abs(pct)}%)`;
+}
