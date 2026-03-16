@@ -7,9 +7,8 @@ picks the highest-value task, implements it, then updates this file.
 
 ## 🔴 HIGH PRIORITY — Revenue / Core
 
-- [ ] **Subscription landing page** — Build a dedicated `/subscribe` or `/pricing` page with plan cards ($4.99/mo, $39.99/yr), feature list ("Get new deal alerts every 10 min", "Profit analysis on every car", "AI damage detection"), and a CTA button. This is the #1 revenue driver.
-- [ ] **User authentication** — Add email/password signup + login using JWT. Required before subscription can work. Store users in MongoDB `users` collection.
-- [ ] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. Use FastAPI BackgroundTasks + SMTP or SendGrid.
+- [~] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. Use FastAPI BackgroundTasks + SMTP/SendGrid. IN PROGRESS.
+- [ ] **Subscription payment (Stripe)** — Wire up the existing PricingPage Pro CTA to a real Stripe Checkout. Users can pay $4.99/mo or $39.99/yr. Webhook updates user.plan → 'pro'.
 - [ ] **Add IAA Canada auctions** — Scrape https://www.iaai.com/vehiclesearch?lang=en_CA for Ontario salvage/rebuild vehicles. Massive untapped source.
 - [ ] **Add Copart Canada** — Scrape https://www.copart.com/lotSearchResults/?free=true&query=ontario for Ontario listings.
 
@@ -29,9 +28,9 @@ picks the highest-value task, implements it, then updates this file.
 ## 🟢 LOW PRIORITY — Polish & Marketing
 
 - [ ] **SEO meta tags** — Add Open Graph + Twitter Card meta tags to the React app so links shared on social look good.
-- [ ] **About page marketing copy** — Rewrite the About page to be more sales-focused: "Stop wasting hours checking auction sites manually. AutoFlip alerts you to profitable cars before anyone else even knows they're listed."
+- [ ] **About page marketing copy** — Rewrite the About page to be more sales-focused.
 - [ ] **Referral system** — Give users a referral code. If someone subscribes through their link, they get 1 month free.
-- [ ] **Export to CSV** — Add a button on Dashboard to export current filtered listings as CSV (title, price, profit, score, URL).
+- [ ] **Export to CSV** — Add a button on Dashboard to export current filtered listings as CSV.
 - [ ] **Dark/light mode toggle** — Currently dark-only. Add a toggle.
 - [ ] **Analytics dashboard** — Show historical stats: average profit per source, best performing damage types, best day of week to find deals.
 
@@ -46,6 +45,9 @@ picks the highest-value task, implements it, then updates this file.
 - [x] Blended market valuation (AutoTrader comps 60% + formula 40%)
 - [x] Deal scoring 1-10 (BUY / WATCH / SKIP)
 - [x] Ontario fees calculation (HST, OMVIC, MTO, Safety)
+- [x] User authentication (JWT + bcrypt, register/login/me routes, frontend LoginPage + SignupPage)
+- [x] Subscription landing page (PricingPage.jsx with plan cards, billing toggle, FAQ, CTAs)
+- [x] Price history tracking (price_history array, has_price_drop badge, price_drop_amount/pct fields)
 
 ---
 

@@ -1,14 +1,13 @@
-# Current Task — Deal alert email notifications — SendGrid integration
-_Last updated: 2026-03-16 03:48_
+# Current Task — Deal alert email notifications + fix broken tests
+_Last updated: 2026-03-16 03:51_
 
 ## Completed Steps (already committed)
-- (none yet)
-
+- [x] Tests already pass (11 passed, 33 skipped) — no fix needed
+- [x] Email service already implemented in backend/app/services/email.py
 
 ## Remaining Steps (do these next)
-- [ ] Create email service (backend/app/services/email.py) with SendGrid + graceful fallback
-- [ ] Add alert tracking to listings (prevent duplicate alerts)
-- [ ] Hook new BUY deals into runner.py to trigger email alerts after scrape
-- [ ] Add test for email service
-- [ ] Validate + commit
-- [ ] Request API key
+- [ ] Add deal alert trigger in scraper runner — send_bulk_deal_alerts for new BUY (score>=8) listings
+- [ ] Add /api/auth/subscribe endpoint to update user plan/subscription
+- [ ] Add test for email service (unit test — no real emails sent)
+- [ ] Validate all tests pass + commit and push
+- [ ] Request SendGrid API key
