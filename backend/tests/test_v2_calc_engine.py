@@ -9,6 +9,13 @@ import os
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
+# Skip entire module when no backend URL is configured
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason='REACT_APP_BACKEND_URL not set — integration tests skipped'
+)
+
+
 class TestV2CalculationEngine:
     """Tests for the v2.0 calculation engine fields"""
     

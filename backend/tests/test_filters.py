@@ -1,12 +1,23 @@
 """
 Test suite for AutoFlip Intelligence API - Filter Functionality
 Tests brand_type and status filter parameters for GET /api/listings endpoint
+
+NOTE: These are INTEGRATION tests — they require a running backend.
+      Set REACT_APP_BACKEND_URL env var to run them.
+      Without the env var, all tests are automatically skipped.
 """
 import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+
+# Skip entire module when no backend URL is configured
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="REACT_APP_BACKEND_URL not set — integration tests skipped"
+)
+
 
 class TestAPIHealth:
     """Basic API health check tests"""

@@ -9,6 +9,7 @@ from ..scrapers.picnsave import scrape_picnsave
 from ..services.ai_damage import detect_damage_from_photo
 from ..services.autotrader import estimate_market_value_blended
 from ..services.calculations import get_repair_range, calculate_ontario_fees, calc_deal_score
+from ..services.email_alerts import send_deal_alert, ALERT_MIN_SCORE
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,55 @@ async def get_scan_interval():
     if settings:
         return settings.get("scan_interval", 600)
     return 600
+
+
+async def dispatch_buy_deal_alerts(new_buy_listings: list[dict]) -> int:
+    """
+    Send BUY deal alert emails to all subscribed Pro users.
+
+    Returns the number of emails dispatched (not necessarily delivered).
+    Runs in background — never raises exceptions.
+    """
+    if not new_buy_listings:
+        return 0
+
+    try:
+        # Find all active Pro subscribers with email alerts enabled
+        subscribers = await db.users.find(
+            {
+                "plan": "pro",
+                "subscription_status": "active",
+                "email_alerts": {"$ne": False},  # default ON for pro users
+            },
+            {"_id": 0, "email": 1, "name": 1},
+        ).to_list(1000)
+
+        if not subscribers:
+            logger.info("No Pro subscribers to notify — skipping email alerts")
+            return 0
+
+        sent_count = 0
+        for listing in new_buy_listings:
+            for subscriber in subscribers:
+                try:
+                    ok = await send_deal_alert(subscriber["email"], listing)
+                    if ok:
+                        sent_count += 1
+                except Exception as e:
+                    logger.warning(
+                        "Alert dispatch error for %s / listing %s: %s",
+                        subscriber.get("email"), listing.get("title"), e
+                    )
+
+        if sent_count:
+            logger.info(
+                "Dispatched %d deal alert emails (%d deals × %d subscribers)",
+                sent_count, len(new_buy_listings), len(subscribers),
+            )
+        return sent_count
+    except Exception as e:
+        logger.error("dispatch_buy_deal_alerts error: %s", e)
+        return 0
 
 
 async def run_full_scrape():
@@ -64,6 +114,7 @@ async def run_full_scrape():
     updated_count = 0
     ai_detected_count = 0
     price_drop_count = 0
+    new_buy_listings: list[dict] = []  # track new BUY deals for email alerts
 
     for raw in all_listings:
         url = raw.get("url", "")
@@ -186,7 +237,6 @@ async def run_full_scrape():
             listing_doc["price_history"] = price_history
 
             # ── Compute cumulative price-drop fields ──────────────────────
-            # Price drop vs. the original listed price (first entry in history or current if no history)
             original_price = price_history[0]["price"] if price_history else price
             if original_price and price and original_price > price:
                 listing_doc["price_drop_amount"] = round(original_price - price, 0)
@@ -208,6 +258,14 @@ async def run_full_scrape():
             listing_doc["has_price_drop"] = False
             await db.listings.insert_one(listing_doc)
             new_count += 1
+
+            # ── Track new BUY deals for email alerts ─────────────────────
+            if score and score >= ALERT_MIN_SCORE and score_label == "BUY":
+                new_buy_listings.append(listing_doc)
+                logger.info(
+                    "  New BUY deal queued for alert: %s (score %d)",
+                    listing_doc["title"], score
+                )
 
     source_urls = {}
     for l in all_listings:
@@ -241,8 +299,23 @@ async def run_full_scrape():
         }},
         upsert=True
     )
-    logger.info(f"=== Scrape complete: {new_count} new, {updated_count} updated, {ai_detected_count} AI damage detections, {price_drop_count} price drops, {len(all_listings)} total ===")
-    return {"new": new_count, "updated": updated_count, "total": len(all_listings), "ai_detections": ai_detected_count, "price_drops": price_drop_count}
+    logger.info(
+        "=== Scrape complete: %d new, %d updated, %d AI damage, %d price drops, %d total ===",
+        new_count, updated_count, ai_detected_count, price_drop_count, len(all_listings)
+    )
+
+    # ── Dispatch email alerts for new BUY deals (fire-and-forget) ──────────
+    if new_buy_listings:
+        asyncio.create_task(dispatch_buy_deal_alerts(new_buy_listings))
+
+    return {
+        "new": new_count,
+        "updated": updated_count,
+        "total": len(all_listings),
+        "ai_detections": ai_detected_count,
+        "price_drops": price_drop_count,
+        "buy_alerts_queued": len(new_buy_listings),
+    }
 
 
 async def scheduled_scrape():

@@ -1,11 +1,12 @@
 """
-Auth routes — /api/auth/register, /api/auth/login, /api/auth/me
+Auth routes — /api/auth/register, /api/auth/login, /api/auth/me, /api/auth/subscribe
 """
 import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Header, status
+from pydantic import BaseModel
 from typing import Optional
 
 from ..database import db
@@ -42,6 +43,17 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Pydantic schemas
+# ──────────────────────────────────────────────────────────────────────────────
+class SubscribeRequest(BaseModel):
+    plan: str = "pro"                  # "free" | "pro"
+    billing_period: str = "monthly"    # "monthly" | "yearly"
+    subscription_status: str = "active"  # "active" | "inactive" | "cancelled"
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -116,6 +128,71 @@ async def me(authorization: Optional[str] = Header(None)):
     """Return the currently authenticated user."""
     user = await get_current_user(authorization)
     return safe_user(user)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/subscribe
+# ──────────────────────────────────────────────────────────────────────────────
+@router.post("/subscribe")
+async def subscribe(body: SubscribeRequest, authorization: Optional[str] = Header(None)):
+    """
+    Update the authenticated user's subscription plan and status.
+
+    Called by the Stripe webhook handler (or directly from the frontend for dev/test).
+    Validates plan values, updates the user document, and returns the updated user.
+    """
+    user = await get_current_user(authorization)
+
+    # Validate plan value
+    valid_plans = ("free", "pro")
+    if body.plan not in valid_plans:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid plan '{body.plan}'. Must be one of: {valid_plans}",
+        )
+
+    valid_statuses = ("active", "inactive", "cancelled", "past_due")
+    if body.subscription_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid subscription_status. Must be one of: {valid_statuses}",
+        )
+
+    valid_billing = ("monthly", "yearly")
+    if body.billing_period not in valid_billing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid billing_period. Must be one of: {valid_billing}",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    update_fields: dict = {
+        "plan": body.plan,
+        "subscription_status": body.subscription_status,
+        "billing_period": body.billing_period,
+        "updated_at": now,
+    }
+
+    # Optionally store Stripe IDs for webhook reconciliation
+    if body.stripe_customer_id:
+        update_fields["stripe_customer_id"] = body.stripe_customer_id
+    if body.stripe_subscription_id:
+        update_fields["stripe_subscription_id"] = body.stripe_subscription_id
+
+    # If upgrading to pro, record the subscription start time
+    if body.plan == "pro" and user.get("plan") != "pro":
+        update_fields["subscribed_at"] = now
+        logger.info("User upgraded to Pro: %s (billing: %s)", user["email"], body.billing_period)
+    elif body.plan == "free" and user.get("plan") == "pro":
+        update_fields["cancelled_at"] = now
+        logger.info("User downgraded to Free: %s", user["email"])
+
+    await db.users.update_one({"id": user["id"]}, {"$set": update_fields})
+
+    # Return the updated user
+    updated_user = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return safe_user(updated_user)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

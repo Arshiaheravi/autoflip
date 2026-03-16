@@ -83,12 +83,18 @@ def decode_token(token: str) -> Optional[dict]:
 
 
 def safe_user(user_doc: dict) -> dict:
-    """Strip sensitive fields before returning to client."""
+    """Strip sensitive fields before returning to client.
+
+    Always returns a consistent shape — never exposes password_hash,
+    Stripe IDs, or other internal fields.
+    """
     return {
         "id": user_doc.get("id"),
         "email": user_doc.get("email"),
         "name": user_doc.get("name", ""),
         "plan": user_doc.get("plan", "free"),
-        "created_at": user_doc.get("created_at"),
+        "billing_period": user_doc.get("billing_period", "monthly"),
         "subscription_status": user_doc.get("subscription_status", "inactive"),
+        "created_at": user_doc.get("created_at"),
+        "subscribed_at": user_doc.get("subscribed_at"),
     }
