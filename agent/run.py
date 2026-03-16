@@ -54,7 +54,7 @@ load_dotenv(ROOT / "backend" / ".env")
 def load_config() -> dict:
     defaults = {
         "model": "claude-sonnet-4-6",
-        "daily_limit_usd": 10.0,
+        "daily_limit_usd": 15.0,
         "interval_hours": 4,
         "session_max_turns": 50,
         "input_cost_per_token": 3e-6,
