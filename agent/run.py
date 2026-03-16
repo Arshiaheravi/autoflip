@@ -39,6 +39,7 @@ REPORTS_DIR.mkdir(exist_ok=True)
 
 CONFIG_FILE       = AGENT_DIR / "config.json"
 BUDGET_FILE       = AGENT_DIR / "daily_budget.json"
+GROWTH_FILE       = AGENT_DIR / "growth_metrics.json"
 LOG_FILE          = AGENT_DIR / "activity_log.md"
 BACKLOG_FILE      = AGENT_DIR / "BACKLOG.md"
 API_REQUESTS_FILE = AGENT_DIR / "api_requests.md"
@@ -179,15 +180,22 @@ TOOLS = [
     },
     {
         "name": "task_complete",
-        "description": "Signal that this session's improvement is complete. Always call this at the end.",
+        "description": (
+            "End the session. Call this ONLY after: (1) feature committed and pushed, "
+            "(2) knowledge.md updated with at least one lesson learned, "
+            "(3) agent/run.py improved if you spotted anything to make better. "
+            "These three things are non-negotiable every single session."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "summary": {"type": "string", "description": "1-3 sentences describing what was done."},
+                "summary": {
+                    "type": "string",
+                    "description": "What was built/fixed this session."
+                },
                 "files_changed": {
                     "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Files created or modified."
+                    "items": {"type": "string"}
                 },
                 "category": {
                     "type": "string",
@@ -197,10 +205,18 @@ TOOLS = [
                 },
                 "impact": {
                     "type": "string",
-                    "description": "Why this matters to paying users or to the business."
+                    "description": "Why this matters to users or the business."
+                },
+                "self_improvement": {
+                    "type": "string",
+                    "description": "What you improved about yourself this session (agent/run.py, knowledge.md, tools, prompt). Be specific."
+                },
+                "next_session_hint": {
+                    "type": "string",
+                    "description": "One sentence: what the next session should prioritize and why."
                 }
             },
-            "required": ["summary", "category", "impact"]
+            "required": ["summary", "category", "impact", "self_improvement", "next_session_hint"]
         }
     }
 ]
@@ -458,24 +474,29 @@ git push origin main
 ```
 Commit messages must explain the WHY, not just the what.
 
-### PHASE 6: Self-Reflect & Grow (MANDATORY at end of every session)
-After committing, always:
-1. What did I learn this session I didn't know before? → write to `agent/knowledge.md`
-2. Is there something in the system prompt that should be updated? → update `agent/run.py`
-3. Did I discover a better tool or workflow? → add it to TOOLS in `agent/run.py`
-4. Update `agent/BACKLOG.md` — mark done items, add new discoveries
+### PHASE 6: Self-Reflect & Grow — MANDATORY, EVERY SESSION, NO EXCEPTIONS
+This phase is not optional. It is the engine of compounding growth.
 
----
+**Step A — Update knowledge.md** (ALWAYS):
+Append at least one concrete lesson to `agent/knowledge.md`. Examples:
+- "BeautifulSoup fails on this site because it uses JS rendering — need httpx + regex fallback"
+- "Tailwind `gap-4` on flex containers doesn't work in older Safari — use `space-x-4` instead"
+- "IAA Canada search requires a session cookie from the homepage first"
 
-## Self-Improvement Mandate
-You MUST improve your own code in `agent/run.py` whenever you discover:
-- A smarter decision-making strategy
-- A useful new tool to add
-- A better way to load context
-- A flaw in the current session logic
-- Better system prompt instructions
+**Step B — Improve agent/run.py** (at least every 3rd session, check growth_metrics.json session count):
+Read agent/run.py and look for at least ONE of:
+- A tool that could be more useful (better description, new parameter, new tool entirely)
+- A section of the system prompt that's missing context or could be sharper
+- A flaw in build_context() — missing info that would help decision-making
+- A better session strategy based on what you just experienced
+Make the change. The agent running next session should be smarter than you are right now.
 
-This is how you get smarter every day. The agent that runs next session should be better than the one running now.
+**Step C — Fill in task_complete** with:
+- `self_improvement`: exactly what you improved about the agent itself
+- `next_session_hint`: what the next session should do and why (this is read at start of next session)
+
+**Step D — Update BACKLOG.md**:
+Mark the item done `[x]`, add any new discoveries, re-prioritize if needed.
 
 ---
 
@@ -574,6 +595,21 @@ def build_context() -> str:
     spend = get_today_spend()
     remaining = cfg["daily_limit_usd"] - spend
     parts.append(f"## Budget\nSpent today: ${spend:.4f} / ${cfg['daily_limit_usd']:.2f}  |  Remaining: ${remaining:.4f}")
+
+    # Last session's recommended next priority + all-time growth stats
+    if GROWTH_FILE.exists():
+        m = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
+        hints = m.get("next_session_hints", [])
+        total = m.get("total_sessions", 0)
+        cats  = m.get("categories", {})
+        last_self = m.get("self_improvements", [{}])[-1].get("what", "none yet")
+        growth_summary = (
+            f"Total sessions: {total} | Categories: {cats}\n"
+            f"Last self-improvement: {last_self}\n"
+        )
+        if hints:
+            growth_summary += f"PRIORITY FROM LAST SESSION: {hints[0]['hint']}"
+        parts.append(f"## Growth Metrics & Next Priority\n{growth_summary}")
 
     # Recent git commits
     git_log = execute_tool("run_command", {"command": "git log --oneline -12"})
@@ -696,47 +732,57 @@ def run_session():
     new_total = get_today_spend()
     print(f"\nSession: ${cost:.4f}  |  Today total: ${new_total:.4f}")
 
-    # Write to activity log
+    # Write to activity log + report + growth metrics
     ts_short = datetime.now().strftime("%Y-%m-%d %H:%M")
     if task_result:
-        summary  = task_result.get("summary", "Improvement made")
-        category = task_result.get("category", "feature")
-        impact   = task_result.get("impact", "")
-        files    = task_result.get("files_changed", [])
+        summary      = task_result.get("summary", "Improvement made")
+        category     = task_result.get("category", "feature")
+        impact       = task_result.get("impact", "")
+        files        = task_result.get("files_changed", [])
+        self_impr    = task_result.get("self_improvement", "")
+        next_hint    = task_result.get("next_session_hint", "")
 
-        log_entry = (
-            f"\n---\n"
-            f"## {ts_short} — {category.upper().replace('_',' ')}\n"
-            f"**{summary}**\n"
-        )
-        if impact:
-            log_entry += f"Impact: {impact}\n"
-        if files:
-            log_entry += f"Files: {', '.join(files)}\n"
+        # Activity log
+        log_entry = f"\n---\n## {ts_short} — {category.upper().replace('_',' ')}\n**{summary}**\n"
+        if impact:       log_entry += f"Impact: {impact}\n"
+        if files:        log_entry += f"Files: {', '.join(files)}\n"
+        if self_impr:    log_entry += f"Self-improvement: {self_impr}\n"
+        if next_hint:    log_entry += f"Next session: {next_hint}\n"
         log_entry += f"Cost: ${cost:.4f}\n"
-
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log_entry)
 
-        # Append to daily report
-        report_section = (
-            f"\n## {ts_short} — {category.upper().replace('_',' ')}\n"
-            f"**{summary}**\n"
-        )
-        if impact:
-            report_section += f"> {impact}\n"
-        if files:
-            report_section += f"Files changed: `{'`, `'.join(files)}`\n"
-        report_section += f"API cost: ${cost:.4f}\n"
+        # Daily report
+        report_section = f"\n## {ts_short} — {category.upper().replace('_',' ')}\n**{summary}**\n"
+        if impact:    report_section += f"> {impact}\n"
+        if files:     report_section += f"Files: `{'`, `'.join(files)}`\n"
+        if self_impr: report_section += f"Agent improved itself: {self_impr}\n"
+        if next_hint: report_section += f"Next priority: _{next_hint}_\n"
+        report_section += f"Cost: ${cost:.4f}\n"
         append_to_report(report_section)
 
+        # Growth metrics
+        metrics = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {
+            "total_sessions": 0, "total_cost_usd": 0.0,
+            "categories": {}, "self_improvements": [], "next_session_hints": []
+        }
+        metrics["total_sessions"] += 1
+        metrics["total_cost_usd"] = round(metrics["total_cost_usd"] + cost, 6)
+        metrics["categories"][category] = metrics["categories"].get(category, 0) + 1
+        if self_impr:
+            metrics["self_improvements"].append({"ts": ts_short, "what": self_impr})
+        if next_hint:
+            # Keep only last 5 hints
+            metrics["next_session_hints"] = ([{"ts": ts_short, "hint": next_hint}]
+                                              + metrics["next_session_hints"])[:5]
+        GROWTH_FILE.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
         print(f"\nDone: {summary}")
+        if self_impr:
+            print(f"Self-improved: {self_impr}")
     else:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(
-                f"\n---\n## {ts_short} — INCOMPLETE\n"
-                f"Session ended without task_complete. Cost: ${cost:.4f}\n"
-            )
+            f.write(f"\n---\n## {ts_short} — INCOMPLETE\nSession ended without task_complete. Cost: ${cost:.4f}\n")
         append_to_report(f"\n## {ts_short} — INCOMPLETE\nSession cost: ${cost:.4f}\n")
 
     finalize_report()
@@ -752,18 +798,30 @@ def show_status():
     print(f"Today ({date.today()}):")
     print(f"  Spent:     ${spend:.4f}")
     print(f"  Remaining: ${limit - spend:.4f} / ${limit:.2f}")
+
+    if GROWTH_FILE.exists():
+        m = json.loads(GROWTH_FILE.read_text(encoding="utf-8"))
+        print(f"\nAll-time growth:")
+        print(f"  Total sessions:  {m['total_sessions']}")
+        print(f"  Total API cost:  ${m['total_cost_usd']:.4f}")
+        print(f"  By category:     {m['categories']}")
+        if m.get("self_improvements"):
+            print(f"  Last self-improvement: {m['self_improvements'][-1]['what']}")
+        if m.get("next_session_hints"):
+            print(f"  Next priority: {m['next_session_hints'][0]['hint']}")
+
     report = get_report_file()
     if report.exists():
-        print(f"\nToday's report ({report.name}):")
+        print(f"\nToday's report:")
         print(report.read_text(encoding="utf-8")[-2000:])
-    else:
-        print("\nNo report yet today.")
+
     if API_REQUESTS_FILE.exists():
-        pending = [l for l in API_REQUESTS_FILE.read_text(encoding="utf-8").splitlines() if "PENDING" in l]
-        if pending:
-            print(f"\nAPI keys needed ({len(pending)}):")
-            for p in pending:
-                print(f"  {p}")
+        content = API_REQUESTS_FILE.read_text(encoding="utf-8")
+        unchecked = [l for l in content.splitlines() if l.startswith("## [ ]")]
+        if unchecked:
+            print(f"\nAPI keys needed ({len(unchecked)}):")
+            for u in unchecked:
+                print(f"  {u}")
 
 
 if __name__ == "__main__":
