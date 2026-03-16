@@ -64,6 +64,7 @@ jest.mock('@/lib/utils-app', () => ({
   scoreBadge: () => ({ label: 'WATCH', color: '' }),
   hasPriceDrop: () => false,
   priceDroplabel: () => null,
+  useWatchlist: () => ({ saved: {}, toggle: jest.fn(), isSaved: () => false, count: 0 }),
 }));
 
 import Dashboard from './Dashboard';

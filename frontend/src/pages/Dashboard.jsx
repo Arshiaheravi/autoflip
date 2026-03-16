@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listingsApi, statsApi } from '@/lib/api';
-import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge, fmtDate, hasPriceDrop, priceDroplabel } from '@/lib/utils-app';
+import { fmt, fmtNum, sourceLabel, sourceColor, scoreBadge, fmtDate, hasPriceDrop, priceDroplabel, useWatchlist } from '@/lib/utils-app';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,7 +10,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import {
   Search, RefreshCw, ArrowUpDown, Car, Gauge, Wrench,
   TrendingUp, TrendingDown, AlertTriangle, SlidersHorizontal,
-  Target, X, Settings, CheckCircle2, Shield, Eye, Radio, Tag,
+  Target, X, Settings, CheckCircle2, Shield, Eye, Radio, Tag, Bookmark,
 } from 'lucide-react';
 
 function StatCard({ label, value, icon: Icon, color }) {
@@ -34,16 +34,17 @@ function FilterField({ label, children }) {
   );
 }
 
-function ListingRow({ listing, index, onClick }) {
+function ListingRow({ listing, index, onClick, isSaved, onToggleSave }) {
   const { t } = useLanguage();
   const l = listing;
   const hasPrice = l.price && l.price > 0;
   const hasProfit = l.profit_best !== null && l.profit_best !== undefined;
+  const saved = isSaved ? isSaved(l) : false;
 
   return (
     <>
       {/* Desktop */}
-      <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr] gap-2 items-center px-4 py-3 bg-card border border-border/50 rounded-sm listing-row cursor-pointer" onClick={onClick} data-testid={`listing-row-${l.id || index}`}>
+      <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr_0.4fr] gap-2 items-center px-4 py-3 bg-card border border-border/50 rounded-sm listing-row cursor-pointer" onClick={onClick} data-testid={`listing-row-${l.id || index}`}>
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-16 h-12 bg-secondary rounded-sm overflow-hidden shrink-0">
             {l.photo ? <img src={l.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <div className="flex items-center justify-center h-full"><Car className="h-4 w-4 text-muted-foreground/30" /></div>}
@@ -85,6 +86,16 @@ function ListingRow({ listing, index, onClick }) {
         <div className="text-right">
           <span className="text-[11px] text-muted-foreground font-data" data-testid={`listing-date-${l.id || index}`}>{fmtDate(l.first_seen)}</span>
         </div>
+        <div className="flex justify-center">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSave && onToggleSave(l); }}
+            className={`p-1 rounded-sm transition-colors ${saved ? 'text-amber-400 hover:text-amber-300' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+            title={saved ? 'Remove from saved' : 'Save listing'}
+            data-testid={`save-btn-${l.id || index}`}
+          >
+            <Bookmark className="h-3.5 w-3.5" fill={saved ? 'currentColor' : 'none'} />
+          </button>
+        </div>
       </div>
       {/* Mobile */}
       <div className="lg:hidden bg-card border border-border/50 rounded-sm p-3 cursor-pointer listing-row" onClick={onClick} data-testid={`listing-card-${l.id || index}`}>
@@ -95,7 +106,17 @@ function ListingRow({ listing, index, onClick }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-bold truncate" style={{ fontFamily: 'Barlow Condensed' }}>{l.title}</p>
-              {l.deal_label && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border shrink-0 ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10</span>}
+              <div className="flex items-center gap-1 shrink-0">
+                {l.deal_label && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10</span>}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleSave && onToggleSave(l); }}
+                  className={`p-0.5 rounded-sm transition-colors ${saved ? 'text-amber-400' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                  title={saved ? 'Remove from saved' : 'Save listing'}
+                  data-testid={`save-btn-mobile-${l.id || index}`}
+                >
+                  <Bookmark className="h-3.5 w-3.5" fill={saved ? 'currentColor' : 'none'} />
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs flex-wrap">
               <span className="font-bold font-data text-primary">{hasPrice ? fmt(l.price) : t('detail.tbd')}</span>
@@ -124,6 +145,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedListing, setSelectedListing] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [activeTab, setActiveTab] = useState('all');
+  const { isSaved, toggle, count: savedCount } = useWatchlist();
   const [filters, setFilters] = useState({
     source: '', search: '', min_profit: '', max_price: '',
     min_score: '', damage_type: '', sort_by: 'deal_score', sort_order: 'desc',
@@ -161,6 +184,8 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const updateFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+
+  const displayListings = activeTab === 'saved' ? listings.filter(l => isSaved(l)) : listings;
 
   return (
     <main className="max-w-[1600px] mx-auto px-4 md:px-8 py-6 space-y-5" data-testid="dashboard-page">
@@ -242,7 +267,23 @@ export default function Dashboard() {
           <SlidersHorizontal className="h-3 w-3 mr-1" />{t('dashboard.moreFilters')}
         </Button>
         <Button variant="outline" size="sm" onClick={fetchData} className="border-border/50" data-testid="refresh-btn"><RefreshCw className="h-3 w-3" /></Button>
-        <span className="text-xs text-muted-foreground ml-auto">{listings.length} {t('dashboard.results')}</span>
+        <div className="flex items-center gap-1 ml-auto" data-testid="listing-tabs">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`text-xs px-3 py-1.5 rounded-sm border transition-colors ${activeTab === 'all' ? 'bg-primary/10 text-primary border-primary/30' : 'bg-card border-border/50 text-muted-foreground hover:text-foreground'}`}
+            data-testid="tab-all"
+          >
+            {t('dashboard.results') ? `${listings.length} ${t('dashboard.results')}` : `${listings.length} results`}
+          </button>
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-sm border transition-colors ${activeTab === 'saved' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' : 'bg-card border-border/50 text-muted-foreground hover:text-foreground'}`}
+            data-testid="tab-saved"
+          >
+            <Bookmark className="h-3 w-3" fill={activeTab === 'saved' ? 'currentColor' : 'none'} />
+            Saved{savedCount > 0 ? ` (${savedCount})` : ''}
+          </button>
+        </div>
       </div>
       {showFilters && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-card border border-border/50 rounded-sm animate-slide-up" data-testid="expanded-filters">
@@ -269,21 +310,28 @@ export default function Dashboard() {
           <p className="text-sm text-muted-foreground">{t('dashboard.loading')}</p>
         </div>
       )}
-      {!loading && listings.length > 0 && (
+      {!loading && (activeTab === 'all' ? listings.length > 0 : displayListings.length > 0) && (
         <div className="space-y-2" data-testid="listings-container">
-          <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr] gap-2 px-4 py-2 text-[10px] text-muted-foreground uppercase tracking-wider">
-            <div>{t('dashboard.vehicle')}</div><div>{t('dashboard.source')}</div><div className="text-right">{t('dashboard.price')}</div><div className="text-right">{t('dashboard.mileage')}</div><div>{t('detail.damage')}</div><div className="text-right">{t('dashboard.marketValue')}</div><div className="text-right">{t('dashboard.repairEst')}</div><div className="text-right">{t('dashboard.profitRange')}</div><div className="text-right">{t('dashboard.roi')}</div><div className="text-center">{t('dashboard.score')}</div><div className="text-right">{t('dashboard.found')}</div>
+          <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr_0.4fr] gap-2 px-4 py-2 text-[10px] text-muted-foreground uppercase tracking-wider">
+            <div>{t('dashboard.vehicle')}</div><div>{t('dashboard.source')}</div><div className="text-right">{t('dashboard.price')}</div><div className="text-right">{t('dashboard.mileage')}</div><div>{t('detail.damage')}</div><div className="text-right">{t('dashboard.marketValue')}</div><div className="text-right">{t('dashboard.repairEst')}</div><div className="text-right">{t('dashboard.profitRange')}</div><div className="text-right">{t('dashboard.roi')}</div><div className="text-center">{t('dashboard.score')}</div><div className="text-right">{t('dashboard.found')}</div><div></div>
           </div>
-          {listings.map((listing, i) => (
-            <ListingRow key={listing.id || listing.url} listing={listing} index={i} onClick={() => setSelectedListing(listing)} />
+          {displayListings.map((listing, i) => (
+            <ListingRow key={listing.id || listing.url} listing={listing} index={i} onClick={() => setSelectedListing(listing)} isSaved={isSaved} onToggleSave={toggle} />
           ))}
         </div>
       )}
-      {!loading && listings.length === 0 && (
+      {!loading && activeTab === 'all' && listings.length === 0 && (
         <div className="text-center py-20" data-testid="empty-state">
           <Car className="h-16 w-16 mx-auto mb-4 text-muted-foreground/20" />
           <p className="text-lg text-muted-foreground mb-2">{t('dashboard.noListings')}</p>
           <p className="text-sm text-muted-foreground">{t('dashboard.noListingsHint')}</p>
+        </div>
+      )}
+      {!loading && activeTab === 'saved' && displayListings.length === 0 && (
+        <div className="text-center py-20" data-testid="saved-empty-state">
+          <Bookmark className="h-16 w-16 mx-auto mb-4 text-muted-foreground/20" />
+          <p className="text-lg text-muted-foreground mb-2">No saved listings yet</p>
+          <p className="text-sm text-muted-foreground">Click the <Bookmark className="h-3.5 w-3.5 inline mx-0.5" /> bookmark on any listing to save it here.</p>
         </div>
       )}
       {selectedListing && <ListingDetail listing={selectedListing} onClose={() => setSelectedListing(null)} />}

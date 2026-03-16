@@ -1,3 +1,5 @@
+import { useState, useCallback } from 'react';
+
 export function fmt(value) {
   if (value === null || value === undefined) return 'N/A';
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -60,4 +62,43 @@ export function priceDroplabel(listing) {
   const pct = listing?.price_drop_pct || 0;
   if (!amt) return null;
   return `↓ $${Math.abs(amt).toLocaleString('en-CA')} (${Math.abs(pct)}%)`;
+}
+
+const WATCHLIST_KEY = 'autoflip_watchlist';
+
+function listingId(l) {
+  return l.id || l._id || l.url || '';
+}
+
+/**
+ * Hook: localStorage-backed watchlist. Returns { saved, isSaved, toggle, count }.
+ * saved = { [id]: { id, title, price, deal_label } }
+ */
+export function useWatchlist() {
+  const [saved, setSaved] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  const toggle = useCallback((listing) => {
+    const id = listingId(listing);
+    if (!id) return;
+    setSaved(prev => {
+      const next = { ...prev };
+      if (next[id]) {
+        delete next[id];
+      } else {
+        next[id] = { id, title: listing.title, price: listing.price, deal_label: listing.deal_label };
+      }
+      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const isSaved = useCallback((listing) => !!saved[listingId(listing)], [saved]);
+
+  return { saved, toggle, isSaved, count: Object.keys(saved).length };
 }
