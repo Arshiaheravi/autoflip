@@ -143,3 +143,8 @@ Key findings from real papers — apply these techniques actively:
 **Max 3 QA attempts per step.** update_current_task now accepts qa_attempt (1-3) + qa_feedback (specific error text).
 Pattern: run_health_check → FAIL → update_current_task(qa_attempt=2, qa_feedback="test_deal_score failed: expected 8.5 got 6.0") → fix exactly that → recheck.
 After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move to next task. Never loop forever.
+
+### 2026-03-16 — UX Session
+- **Always update test mocks when adding new imports from mocked modules.** The `utils-app` mock in Dashboard.test.jsx must include every function imported by the component — otherwise tests crash at render time, not at assertion time, making it harder to debug.
+- **`hasPriceDrop` and `priceDroplabel` helpers already existed in utils-app.js** — always check that file before implementing display logic. The backend fields (`has_price_drop`, `price_drop_amount`, `price_drop_pct`, `price_drop_only` filter) were also already in place. This session was purely a frontend wiring job.
+- **Stats grid can grow from 5 → 6 columns**: use `md:grid-cols-6` not `md:grid-cols-5` when adding a new stat card. Mobile stays 2-col automatically.
