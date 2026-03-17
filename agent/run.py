@@ -493,9 +493,9 @@ def execute_tool(name: str, inputs: dict) -> str:
             cfg_data = load_config()
             # Update pricing based on model
             pricing_map = {
-                "claude-haiku-4-5-20251001":  {"input_cost_per_token": 0.8e-6,  "output_cost_per_token": 4e-6},
+                "claude-haiku-4-5-20251001":  {"input_cost_per_token": 1e-6,    "output_cost_per_token": 5e-6},
                 "claude-sonnet-4-6":           {"input_cost_per_token": 3e-6,    "output_cost_per_token": 15e-6},
-                "claude-opus-4-6":             {"input_cost_per_token": 15e-6,   "output_cost_per_token": 75e-6},
+                "claude-opus-4-6":             {"input_cost_per_token": 5e-6,    "output_cost_per_token": 25e-6},
             }
             cfg_data["model"] = model
             cfg_data.update(pricing_map.get(model, {}))

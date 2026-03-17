@@ -174,3 +174,53 @@ After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move t
 - **ROI tiers in calc_deal_score must match flipper economics**: A single ±1 ROI adjustment was too coarse — $2k profit on $2k car (100% ROI) and $2k profit on $20k car (10% ROI) got the same base score. Extended to: roi>100%→+2, roi>60%→+1, roi<-30%→-2, roi<-10%→-1. Two new tests added (225 total).
 - **run_experiment gate works best when changes add new tests**: The previous mileage experiment failed with delta=0 because it modified scores but no new tests were added to capture the expected new behavior. Always add tests that assert the specific new behavior — this makes the metric_after > metric_before clear.
 - **Simplicity criterion**: The ROI tier extension is 4 lines net for a meaningful scoring improvement. Compare to the discarded mileage experiment which added a complex function call with 0 measurable improvement. Small, principled changes beat large speculative refactors.
+
+### 2026-03-16 — Self-Growth Session #15
+
+#### Anthropic Model Pricing (verified 2026-03-16 — update if stale)
+| Model | Input $/MTok | Output $/MTok | Context | Notes |
+|---|---|---|---|---|
+| claude-opus-4-6 | $5 | $25 | 1M | Best for complex coding/agents |
+| claude-sonnet-4-6 | $3 | $15 | 1M | Best balance speed/quality |
+| claude-haiku-4-5-20251001 | $1 | $5 | 200k | Fastest, cheapest — use for research |
+- **Bug fixed in run.py**: `optimize_costs` had Haiku at $0.80/$4 (wrong) and Opus at $15/$75 (old Opus 4 pricing). Corrected to $1/$5 and $5/$25 respectively.
+- **Claude Haiku 3 deprecated**: Retires April 19, 2026. Already using Haiku 4.5.
+- All current models support extended thinking, 1M context (Haiku 4.5 = 200k).
+
+#### Prompt Caching — Key Facts
+- Cache reads cost **10% of base input** — 90% savings on repeated content
+- Minimum cacheable: 2,048 tokens for Sonnet 4.6 / 4,096 for Opus 4.6 and Haiku 4.5
+- TTL: 5 minutes default, 1 hour available at 2x base price
+- Automatic caching: add `cache_control={"type": "ephemeral"}` at top level — system moves breakpoint forward each turn
+- Explicit breakpoints: up to 4 per request, placed on individual content blocks
+- Cache reads don't count against rate limits
+- Implementation: system prompt (huge in this agent) + knowledge.md are prime candidates to cache
+- This is in the research queue for agent/run.py integration — implement in a dedicated self-growth session
+
+#### React 19 New Patterns (2026)
+- `use()` hook: read async resources + context without useEffect
+- `useActionState()`: handle form action state + pending/error states
+- `useOptimistic()`: show optimistic UI updates before server confirms
+- **React Compiler** (stable 2025): auto-memoizes — can remove most `useMemo`/`useCallback` calls
+- Server Components: cut initial JS payload 30-50% — not applicable to our CRA setup
+- `useTransition`: wrap heavy filter/sort operations to keep UI responsive
+
+#### FastAPI Best Practices 2026
+- Always use async DB drivers (Motor for MongoDB — already doing this)
+- Connection pooling: Motor handles this internally — no extra config needed
+- Never mix `async def` route handlers with sync blocking libraries
+- Use `BackgroundTasks` for light async work after response; use APScheduler/Celery for heavy scheduled work
+- FastAPI benchmarks: ~900 req/s at 70ms latency with proper async usage
+
+#### IAA Canada / Copart Canada — Research Conclusion
+- **Both sites are protected by Cloudflare + JS rendering** — direct httpx scraping will never work
+- Rebrowser and parser.best offer commercial scraper APIs for these sites
+- **Strategy**: Accept these as blocked for DIY scraping. Consider adding a "manual import" feature where users paste a VIN or URL and we enrich it with our calculation pipeline. This avoids the anti-bot problem entirely.
+- Available fields if we ever get API access: VIN, damage type, bid price, auction date, mileage, location
+
+#### Competitor Intelligence (2026-03-16)
+- **Flipped.ca** — Direct Canadian competitor. Sells cars online, trade-in focused. Different angle (consumer) but overlapping market.
+- **vAuto Stockwave** — Dealer-focused wholesale vehicle sourcing SaaS. We serve the flip/private market they ignore.
+- **2026 trend**: "Super App" consolidation — buyers want buying + selling + watchlist + push notifications in one app.
+- **Differentiator**: "Smart watchlist notifications — get alerted before a deal is gone" is called out as THE key differentiating feature in 2026 SaaS auction tools. AutoFlip already has email alerts — this is a marketing angle to emphasize.
+- **Marketing copy update**: Lead with "Get alerted on BUY deals in 10 minutes" rather than "monitor auctions". Speed + specificity is what converts in this market.
