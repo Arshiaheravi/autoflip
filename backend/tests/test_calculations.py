@@ -381,3 +381,17 @@ class TestCalcDealScore:
         score_bad, _ = calc_deal_score(3000, 2000, roi_best=-20)
         score_terrible, _ = calc_deal_score(3000, 2000, roi_best=-50)
         assert score_terrible < score_bad
+
+    def test_graduated_worst_case_medium(self):
+        # Both have avg=1500 → base score 6
+        # worst=-3000 → -1 → score 5; worst=-6000 → -2 → score 4
+        score_mild, _ = calc_deal_score(6000, -3000)
+        score_severe, _ = calc_deal_score(9000, -6000)
+        assert score_severe < score_mild
+
+    def test_graduated_worst_case_extreme(self):
+        # Both have avg=1500 → base score 6
+        # worst=-6000 → -2 → score 4; worst=-12000 → -3 → score 3
+        score_severe, _ = calc_deal_score(9000, -6000)
+        score_extreme, _ = calc_deal_score(15000, -12000)
+        assert score_extreme < score_severe

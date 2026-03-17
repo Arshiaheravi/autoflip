@@ -363,8 +363,12 @@ def calc_deal_score(best_profit: float, worst_profit: float, roi_best: float = 0
     elif roi_best and roi_best < -10:
         score = max(1, score - 1)
 
-    if worst_profit < -2000 and score > 3:
-        score = max(3, score - 1)
+    if worst_profit < -10000:
+        score = max(1, score - 3)
+    elif worst_profit < -5000:
+        score = max(1, score - 2)
+    elif worst_profit < -2000:
+        score = max(1, score - 1)
 
     if score >= 8:
         label = "BUY"

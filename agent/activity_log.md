@@ -212,3 +212,16 @@ Cost: $0.00 (VS Code mode)
 Impact: AutoFlip now surfaces Ontario Copart inventory from ALL Ontario yards (Bowmanville, Ottawa, etc.) — not just the Cathcart-area location previously scraped. 2x+ data volume for Ontario car flippers. 259 backend tests passing (+20 new).
 Files: `backend/app/scrapers/copart_ontario.py`, `backend/tests/test_copart_ontario.py`, `backend/app/scrapers/runner.py`, `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 20:51 — FEATURE [vscode]
+**Added `copart_ontario.py` scraper — scrapes `salvagereseller.com/cars-for-sale/state/ontario` (2,138 Ontario Copart lots from all Ontario yards) using multi-strategy HTML parsing, integrated into runner.py as source `copart_on`, wired into frontend filter/stats, 20 new unit tests — 259 total passing.**
+Impact: AutoFlip now surfaces the full Ontario Copart inventory (Bowmanville, Ottawa, all yards) accessible to non-license holders via SalvageReseller as a broker — 2x+ data volume per run compared to the single-yard scraper. More lots = more BUY deals discovered = more value for Pro subscribers.
+Files: `backend/app/scrapers/copart_ontario.py`, `backend/tests/test_copart_ontario.py`, `backend/app/scrapers/runner.py`, `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`
+Output tail:
+— scrapes `salvagereseller.com/cars-for-sale/state/ontario` (2,138 Ontario Copart lots from all Ontario yards) using multi-strategy HTML parsing, integrated into runner.py as source `copart_on`, wired into frontend filter/stats, 20 new unit tests — 259 total passing.
+
+IMPACT: AutoFlip now surfaces the full Ontario Copart inventory (Bowmanville, Ottawa, all yards) accessible to non-license holders via SalvageReseller as a broker — 2x+ data volume per run compared to the single-yard scraper. More lots = more BUY deals discovered = more value for Pro subscribers.
+
+FILES: `backend/app/scrapers/copart_ontario.py`, `backend/tests/test_copart_ontario.py`, `backend/app/scrapers/runner.py`, `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`
+Cost: $0.00 (VS Code mode)

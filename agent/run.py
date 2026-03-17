@@ -2020,15 +2020,82 @@ if __name__ == "__main__":
     once = "--once" in sys.argv
     interval_h = cfg["interval_hours"]
 
+    # --tasks N: run N tasks then exit (works for both modes)
+    tasks_limit = None
+    if "--tasks" in sys.argv:
+        idx = sys.argv.index("--tasks")
+        try:
+            tasks_limit = int(sys.argv[idx + 1])
+        except (IndexError, ValueError):
+            print("Usage: py agent/run.py --tasks 3")
+            sys.exit(1)
+    if tasks_limit:
+        once = False  # tasks mode overrides --once
+
     # Ask user to choose backend (saved after first answer)
     backend_mode = choose_backend_mode()
 
+    def _vscode_sleep_or_continue():
+        """Sleep between VS Code sessions. Returns True to retry immediately (rate limit), False to sleep normally."""
+        if RATE_LIMIT_FILE.exists():
+            try:
+                data = json.loads(RATE_LIMIT_FILE.read_text(encoding="utf-8"))
+                retry_after = datetime.fromisoformat(data["retry_after"])
+                now = datetime.now()
+                sleep_secs = max(int((retry_after - now).total_seconds()) + 90, 90)
+                wake = retry_after.strftime("%H:%M:%S")
+                mins = sleep_secs // 60
+                print(f"\n  Sleeping until {wake} ({mins}m {sleep_secs % 60}s)...")
+                for remaining in range(sleep_secs, 0, -60):
+                    m = remaining // 60
+                    print(f"  ... {m}m remaining", end="\r", flush=True)
+                    time.sleep(min(60, remaining))
+                print(f"\n  Woke up at {datetime.now().strftime('%H:%M:%S')} — retrying session...")
+                RATE_LIMIT_FILE.unlink(missing_ok=True)
+                return True  # retry immediately
+            except Exception:
+                print("\n  Rate limit file unreadable — sleeping 1 hour...")
+                time.sleep(3600)
+                RATE_LIMIT_FILE.unlink(missing_ok=True)
+                return True
+        elif CURRENT_TASK_FILE.exists():
+            print(f"\nUnfinished task detected. Resuming in 30 minutes...")
+            time.sleep(30 * 60)
+        else:
+            print(f"\nSleeping {interval_h}h until next session...")
+            time.sleep(interval_h * 3600)
+        return False
+
     if backend_mode == "vscode":
         print("AutoFlip Autonomous Agent [VS Code Mode — no API cost]")
-        print(f"Interval: {interval_h}h  |  Rate limit: auto-detected from claude CLI")
+        if tasks_limit:
+            print(f"Tasks to complete: {tasks_limit}  |  Rate limit: auto-detected from claude CLI")
+        else:
+            print(f"Interval: {interval_h}h  |  Rate limit: auto-detected from claude CLI")
 
         if once:
             run_vscode_session()
+        elif tasks_limit:
+            completed = 0
+            print(f"\nRunning until {tasks_limit} task(s) complete...\n")
+            while completed < tasks_limit:
+                try:
+                    run_vscode_session()
+                    # Count as completed only if not rate limited
+                    if not RATE_LIMIT_FILE.exists():
+                        completed += 1
+                        remaining = tasks_limit - completed
+                        print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}")
+                except KeyboardInterrupt:
+                    print("\nStopped.")
+                    break
+                except Exception as e:
+                    print(f"Session crashed: {e}")
+
+                if completed < tasks_limit:
+                    retry = _vscode_sleep_or_continue()
+                    if retry:
+                        continue  # rate limit retry, don't count
         else:
             while True:
                 try:
@@ -2044,45 +2111,36 @@ if __name__ == "__main__":
                             f"Error: {e}\n"
                         )
 
-                # Smart sleep for VS Code mode:
-                # - Rate limited → sleep until retry_after, then immediately retry
-                # - Unfinished task → retry in 30 min
-                # - Done cleanly → sleep full interval
-                if RATE_LIMIT_FILE.exists():
-                    try:
-                        data = json.loads(RATE_LIMIT_FILE.read_text(encoding="utf-8"))
-                        retry_after = datetime.fromisoformat(data["retry_after"])
-                        now = datetime.now()
-                        sleep_secs = max(int((retry_after - now).total_seconds()) + 90, 90)
-                        wake = retry_after.strftime("%H:%M:%S")
-                        mins = sleep_secs // 60
-                        print(f"\n  Sleeping until {wake} ({mins}m {sleep_secs % 60}s)...")
-                        for remaining in range(sleep_secs, 0, -60):
-                            m = remaining // 60
-                            print(f"  ... {m}m remaining", end="\r", flush=True)
-                            time.sleep(min(60, remaining))
-                        print(f"\n  Woke up at {datetime.now().strftime('%H:%M:%S')} — retrying session...")
-                        RATE_LIMIT_FILE.unlink(missing_ok=True)
-                        continue  # retry immediately, no interval sleep
-                    except Exception:
-                        print("\n  Rate limit file unreadable — sleeping 1 hour...")
-                        time.sleep(3600)
-                        RATE_LIMIT_FILE.unlink(missing_ok=True)
-                        continue
-                elif CURRENT_TASK_FILE.exists():
-                    print(f"\nUnfinished task detected. Resuming in 30 minutes...")
-                    time.sleep(30 * 60)
-                else:
-                    print(f"\nSleeping {interval_h}h until next session...")
-                    time.sleep(interval_h * 3600)
+                if _vscode_sleep_or_continue():
+                    continue
 
     else:
         # API mode — original behavior
         print("AutoFlip Autonomous Agent [API Mode]")
-        print(f"Model: {cfg['model']}  |  Budget: ${cfg['daily_limit_usd']}/day  |  Interval: {interval_h}h")
+        if tasks_limit:
+            print(f"Model: {cfg['model']}  |  Budget: ${cfg['daily_limit_usd']}/day  |  Tasks: {tasks_limit}")
+        else:
+            print(f"Model: {cfg['model']}  |  Budget: ${cfg['daily_limit_usd']}/day  |  Interval: {interval_h}h")
 
         if once:
             run_session()
+        elif tasks_limit:
+            completed = 0
+            print(f"\nRunning until {tasks_limit} task(s) complete...\n")
+            while completed < tasks_limit:
+                try:
+                    run_session()
+                    completed += 1
+                    remaining = tasks_limit - completed
+                    print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}")
+                except KeyboardInterrupt:
+                    print("\nStopped.")
+                    break
+                except Exception as e:
+                    print(f"Session crashed: {e}")
+                if completed < tasks_limit:
+                    print(f"\nSleeping {interval_h}h until next session...")
+                    time.sleep(interval_h * 3600)
         else:
             while True:
                 try:
