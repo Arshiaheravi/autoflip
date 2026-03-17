@@ -6,11 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import ListingDetail from '@/components/shared/ListingDetail';
+import CompareModal from '@/components/shared/CompareModal';
 import { useLanguage } from '@/lib/LanguageContext';
 import {
   Search, RefreshCw, ArrowUpDown, Car, Gauge, Wrench,
   TrendingUp, TrendingDown, AlertTriangle, SlidersHorizontal,
   Target, X, Settings, CheckCircle2, Shield, Eye, Radio, Tag, Bookmark,
+  Columns2,
 } from 'lucide-react';
 
 function StatCard({ label, value, icon: Icon, color }) {
@@ -34,18 +36,27 @@ function FilterField({ label, children }) {
   );
 }
 
-function ListingRow({ listing, index, onClick, isSaved, onToggleSave }) {
+function ListingRow({ listing, index, onClick, isSaved, onToggleSave, isComparing, onToggleCompare }) {
   const { t } = useLanguage();
   const l = listing;
   const hasPrice = l.price && l.price > 0;
   const hasProfit = l.profit_best !== null && l.profit_best !== undefined;
   const saved = isSaved ? isSaved(l) : false;
+  const comparing = isComparing ? isComparing(l) : false;
 
   return (
     <>
       {/* Desktop */}
       <div className="hidden lg:grid grid-cols-[3fr_0.8fr_1fr_1fr_1fr_1fr_1fr_1.2fr_0.7fr_0.7fr_0.8fr_0.4fr] gap-2 items-center px-4 py-3 bg-card border border-border/50 rounded-sm listing-row cursor-pointer" onClick={onClick} data-testid={`listing-row-${l.id || index}`}>
         <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleCompare && onToggleCompare(l); }}
+            className={`shrink-0 w-4 h-4 rounded border transition-colors ${comparing ? 'bg-blue-500 border-blue-500 text-white' : 'border-border/50 text-transparent hover:border-blue-400'}`}
+            title={comparing ? 'Remove from compare' : 'Add to compare'}
+            data-testid={`compare-check-${l.id || index}`}
+          >
+            {comparing && <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3 mx-auto"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          </button>
           <div className="w-16 h-12 bg-secondary rounded-sm overflow-hidden shrink-0">
             {l.photo ? <img src={l.photo} alt="" className="w-full h-full object-cover" loading="lazy" /> : <div className="flex items-center justify-center h-full"><Car className="h-4 w-4 text-muted-foreground/30" /></div>}
           </div>
@@ -109,6 +120,14 @@ function ListingRow({ listing, index, onClick, isSaved, onToggleSave }) {
               <div className="flex items-center gap-1 shrink-0">
                 {l.deal_label && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${scoreBadge(l.deal_label)}`}>{l.deal_score}/10</span>}
                 <button
+                  onClick={(e) => { e.stopPropagation(); onToggleCompare && onToggleCompare(l); }}
+                  className={`p-0.5 rounded-sm transition-colors ${comparing ? 'text-blue-400' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                  title={comparing ? 'Remove from compare' : 'Add to compare'}
+                  data-testid={`compare-check-mobile-${l.id || index}`}
+                >
+                  <Columns2 className="h-3.5 w-3.5" />
+                </button>
+                <button
                   onClick={(e) => { e.stopPropagation(); onToggleSave && onToggleSave(l); }}
                   className={`p-0.5 rounded-sm transition-colors ${saved ? 'text-amber-400' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
                   title={saved ? 'Remove from saved' : 'Save listing'}
@@ -147,7 +166,27 @@ export default function Dashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [compareListings, setCompareListings] = useState([]);
+  const [showCompare, setShowCompare] = useState(false);
   const { isSaved, toggle, count: savedCount } = useWatchlist();
+
+  const listingKey = (l) => l.id || l._id || l.url || '';
+
+  const isComparing = useCallback((l) => {
+    const key = listingKey(l);
+    return compareListings.some(c => listingKey(c) === key);
+  }, [compareListings]);
+
+  const toggleCompare = useCallback((l) => {
+    const key = listingKey(l);
+    setCompareListings(prev => {
+      if (prev.some(c => listingKey(c) === key)) {
+        return prev.filter(c => listingKey(c) !== key);
+      }
+      if (prev.length >= 3) return prev; // max 3
+      return [...prev, l];
+    });
+  }, []);
   const [filters, setFilters] = useState({
     source: '', search: '', min_profit: '', max_price: '',
     min_score: '', damage_type: '', sort_by: 'deal_score', sort_order: 'desc',
@@ -334,7 +373,7 @@ export default function Dashboard() {
             <div>{t('dashboard.vehicle')}</div><div>{t('dashboard.source')}</div><div className="text-right">{t('dashboard.price')}</div><div className="text-right">{t('dashboard.mileage')}</div><div>{t('detail.damage')}</div><div className="text-right">{t('dashboard.marketValue')}</div><div className="text-right">{t('dashboard.repairEst')}</div><div className="text-right">{t('dashboard.profitRange')}</div><div className="text-right">{t('dashboard.roi')}</div><div className="text-center">{t('dashboard.score')}</div><div className="text-right">{t('dashboard.found')}</div><div></div>
           </div>
           {displayListings.map((listing, i) => (
-            <ListingRow key={listing.id || listing.url} listing={listing} index={i} onClick={() => setSelectedListing(listing)} isSaved={isSaved} onToggleSave={toggle} />
+            <ListingRow key={listing.id || listing.url} listing={listing} index={i} onClick={() => setSelectedListing(listing)} isSaved={isSaved} onToggleSave={toggle} isComparing={isComparing} onToggleCompare={toggleCompare} />
           ))}
         </div>
       )}
@@ -353,6 +392,21 @@ export default function Dashboard() {
         </div>
       )}
       {selectedListing && <ListingDetail listing={selectedListing} onClose={() => setSelectedListing(null)} />}
+      {showCompare && compareListings.length >= 2 && (
+        <CompareModal listings={compareListings} onClose={() => setShowCompare(false)} />
+      )}
+      {compareListings.length >= 2 && !showCompare && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 bg-card border border-blue-500/40 rounded-full shadow-xl shadow-black/30 animate-slide-up" data-testid="compare-bar">
+          <Columns2 className="h-4 w-4 text-blue-400 shrink-0" />
+          <span className="text-sm text-foreground font-semibold">{compareListings.length} listings selected</span>
+          <Button size="sm" className="bg-blue-500 hover:bg-blue-400 text-white text-xs rounded-full px-4" onClick={() => setShowCompare(true)} data-testid="compare-open-btn">
+            Compare
+          </Button>
+          <button onClick={() => setCompareListings([])} className="text-muted-foreground hover:text-foreground transition-colors" title="Clear selection" data-testid="compare-clear-btn">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </main>
   );
 }

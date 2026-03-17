@@ -225,3 +225,18 @@ IMPACT: AutoFlip now surfaces the full Ontario Copart inventory (Bowmanville, Ot
 
 FILES: `backend/app/scrapers/copart_ontario.py`, `backend/tests/test_copart_ontario.py`, `backend/app/scrapers/runner.py`, `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 23:48 — FEATURE [vscode]
+**Graduated the worst-case profit penalty in `calc_deal_score` from a flat `-1` to three tiers (`<-$2k → -1`, `<-$5k → -2`, `<-$10k → -3`), adding 2 targeted tests that verify the gradient — 261 tests passing (was 259).**
+Impact: Deal scores now accurately reflect downside risk magnitude. A high-variance deal (e.g. $15k best / -$12k worst) gets scored 3 instead of 4 — correctly warning subscribers that the floor scenario is catastrophic, not just inconvenient. Subscribers can trust BUY scores more when worst-case penalty is properly graduated.
+Files: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`
+Output tail:
+---
+
+DONE: Graduated the worst-case profit penalty in `calc_deal_score` from a flat `-1` to three tiers (`<-$2k → -1`, `<-$5k → -2`, `<-$10k → -3`), adding 2 targeted tests that verify the gradient — 261 tests passing (was 259).
+
+IMPACT: Deal scores now accurately reflect downside risk magnitude. A high-variance deal (e.g. $15k best / -$12k worst) gets scored 3 instead of 4 — correctly warning subscribers that the floor scenario is catastrophic, not just inconvenient. Subscribers can trust BUY scores more when worst-case penalty is properly graduated.
+
+FILES: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`
+Cost: $0.00 (VS Code mode)

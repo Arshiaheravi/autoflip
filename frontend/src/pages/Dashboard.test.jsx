@@ -45,6 +45,7 @@ jest.mock('@/components/ui/select', () => ({
 }));
 jest.mock('@/components/ui/separator', () => ({ Separator: () => <hr /> }));
 jest.mock('@/components/shared/ListingDetail', () => () => null);
+jest.mock('@/components/shared/CompareModal', () => () => null);
 
 // Mock language context
 jest.mock('@/lib/LanguageContext', () => ({
