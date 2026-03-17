@@ -192,3 +192,23 @@ IMPACT: AutoFlip now has a real payment path — the moment the owner adds 4 Str
 
 FILES: `backend/app/routes/stripe_routes.py`, `backend/tests/test_stripe_routes.py`, `frontend/src/lib/api.js`, `frontend/src/pages/PricingPage.jsx`, `frontend/src/pages/Dashboard.jsx`, `agent/api_requests.md`, `agent/BACKLOG.md`, `agent/knowledge.md`, `agent/skills/stripe_checkout_fastapi.py`
 Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 20:37 — FEATURE [vscode]
+**Self-growth session #15 complete — researched all HIGH queue items, fixed a model pricing bug in `agent/run.py`, and absorbed competitor/tech intelligence into `knowledge.md`.**
+Impact: The pricing bug fix prevents cost optimizer from choosing wrong models (Haiku was priced 20% too cheap, Opus was 3x too expensive — would have biased model routing). New knowledge about prompt caching (90% cost savings), Flipped.ca competitor, and React Compiler gives the next session actionable improvements to implement. 239 tests still passing.
+Files: `agent/run.py`, `agent/knowledge.md`, `agent/research_queue.md`, `agent/BACKLOG.md`, `agent/activity_log.md`
+Output tail:
+DONE: Self-growth session #15 complete — researched all HIGH queue items, fixed a model pricing bug in `agent/run.py`, and absorbed competitor/tech intelligence into `knowledge.md`.
+
+IMPACT: The pricing bug fix prevents cost optimizer from choosing wrong models (Haiku was priced 20% too cheap, Opus was 3x too expensive — would have biased model routing). New knowledge about prompt caching (90% cost savings), Flipped.ca competitor, and React Compiler gives the next session actionable improvements to implement. 239 tests still passing.
+
+FILES: `agent/run.py`, `agent/knowledge.md`, `agent/research_queue.md`, `agent/BACKLOG.md`, `agent/activity_log.md`
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 — FEATURE [vscode]
+**Added Copart Ontario scraper — 150 Ontario Copart lots per run (2,138 total available) via SalvageReseller broker at `state/ontario` URL. Source key `copart_on`, no dealer license required.**
+Impact: AutoFlip now surfaces Ontario Copart inventory from ALL Ontario yards (Bowmanville, Ottawa, etc.) — not just the Cathcart-area location previously scraped. 2x+ data volume for Ontario car flippers. 259 backend tests passing (+20 new).
+Files: `backend/app/scrapers/copart_ontario.py`, `backend/tests/test_copart_ontario.py`, `backend/app/scrapers/runner.py`, `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`
+Cost: $0.00 (VS Code mode)
