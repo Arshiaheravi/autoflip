@@ -1,0 +1,10 @@
+{
+  "model": "claude-opus-4-6",
+  "daily_limit_usd": 15.0,
+  "interval_hours": 2,
+  "session_max_turns": 50,
+  "input_cost_per_token": 0.000015,
+  "output_cost_per_token": 0.000075,
+  "frontend_url": "http://localhost:3000",
+  "backend_url": "http://localhost:8000"
+}
