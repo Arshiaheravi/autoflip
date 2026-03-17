@@ -1,4 +1,4 @@
-import { fmt, fmtNum, sourceLabel, scoreBadge } from '@/lib/utils-app';
+import { fmt, fmtNum, sourceLabel, scoreBadge, buildAutotraderUrl } from '@/lib/utils-app';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -145,11 +145,20 @@ export default function ListingDetail({ listing, onClose }) {
                 </div>
               )}
             </div>
-            <Button variant="outline" className="w-full border-border/50" asChild>
-              <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid="view-original-btn">
-                <ExternalLink className="h-4 w-4 mr-2" />{t('detail.viewOriginal')}
-              </a>
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1 border-border/50" asChild>
+                <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid="view-original-btn">
+                  <ExternalLink className="h-4 w-4 mr-2" />{t('detail.viewOriginal')}
+                </a>
+              </Button>
+              {buildAutotraderUrl(l.title) && (
+                <Button variant="outline" className="flex-1 border-border/50 text-blue-400 hover:text-blue-300 border-blue-500/30 hover:bg-blue-500/10" asChild>
+                  <a href={buildAutotraderUrl(l.title)} target="_blank" rel="noopener noreferrer" data-testid="view-autotrader-btn">
+                    <ExternalLink className="h-4 w-4 mr-2" />View Comps on AutoTrader
+                  </a>
+                </Button>
+              )}
+            </div>
           </div>
         </ScrollArea>
       </DialogContent>

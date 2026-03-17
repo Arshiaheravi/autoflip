@@ -50,6 +50,16 @@ export function fmtDate(dateStr) {
 }
 
 /**
+ * Builds an AutoTrader.ca search URL pre-filtered by title keyword + Ontario province.
+ * title: "2019 Toyota Camry XLE" → https://www.autotrader.ca/cars/?kw=2019+Toyota+Camry+XLE&prv=Ontario
+ */
+export function buildAutotraderUrl(title) {
+  if (!title) return null;
+  const kw = encodeURIComponent(title.trim());
+  return `https://www.autotrader.ca/cars/?kw=${kw}&prv=Ontario`;
+}
+
+/**
  * Returns true if the listing has recorded a price drop.
  */
 export function hasPriceDrop(listing) {
