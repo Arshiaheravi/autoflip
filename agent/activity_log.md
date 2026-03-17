@@ -7,6 +7,15 @@ This file records every improvement the autonomous agent makes.
 Agent system initialized. Ready to begin improving AutoFlip.
 
 ---
+## 2026-03-16 — SELF-GROWTH [vscode]
+**Session #15 — Research queue cleared, pricing bug fixed, knowledge absorbed.**
+- Fixed pricing bug in agent/run.py optimize_costs: Haiku 4.5 was $0.80/$4 (wrong), now $1/$5. Opus 4.6 was $15/$75 (old Opus 4 pricing), now $5/$25.
+- Researched and documented: Anthropic model lineup (Opus 4.6/Sonnet 4.6/Haiku 4.5), prompt caching (90% savings on cache reads), IAA/Copart scraping (confirmed blocked by Cloudflare), React 19 React Compiler (stable, auto-memoizes), FastAPI async best practices, Flipped.ca Canadian competitor.
+- Cleared 3 resolved HIGH queue items. Added: prompt caching implementation + Manual VIN import as new HIGH items.
+- Updated BACKLOG: self-growth items marked done, marketing insight added (lead with "10-minute alerts" angle).
+- 239 backend tests passing.
+
+---
 ## 2026-03-16 03:30 — CRASH
 Error: list index out of range
 
@@ -167,4 +176,19 @@ DONE: Implemented watchlist/saved listings — bookmark button on every listing 
 IMPACT: Users can now star deals they want to track and return to a filtered "Saved" view instantly — no login required, zero backend cost. Reduces decision friction and increases daily retention (users have a reason to return to their saved list).
 
 FILES: `frontend/src/lib/utils-app.js`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`, `agent/skills/localstorage_watchlist_hook.py`, `agent/skills/INDEX.md`
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-16 20:13 — FEATURE [vscode]
+**Stripe Checkout integration complete — Pro CTA now redirects authenticated users to Stripe hosted payment, webhook upgrades `user.plan → 'pro'`, and Dashboard shows a success banner on return.**
+Impact: AutoFlip now has a real payment path — the moment the owner adds 4 Stripe env vars to `.env`, users can subscribe for $4.99/mo or $39.99/yr with zero manual steps. 239 backend + 42 frontend tests passing.
+Files: `backend/app/routes/stripe_routes.py`, `backend/tests/test_stripe_routes.py`, `frontend/src/lib/api.js`, `frontend/src/pages/PricingPage.jsx`, `frontend/src/pages/Dashboard.jsx`, `agent/api_requests.md`, `agent/BACKLOG.md`, `agent/knowledge.md`, `agent/skills/stripe_checkout_fastapi.py`
+Output tail:
+---
+
+DONE: Stripe Checkout integration complete — Pro CTA now redirects authenticated users to Stripe hosted payment, webhook upgrades `user.plan → 'pro'`, and Dashboard shows a success banner on return.
+
+IMPACT: AutoFlip now has a real payment path — the moment the owner adds 4 Stripe env vars to `.env`, users can subscribe for $4.99/mo or $39.99/yr with zero manual steps. 239 backend + 42 frontend tests passing.
+
+FILES: `backend/app/routes/stripe_routes.py`, `backend/tests/test_stripe_routes.py`, `frontend/src/lib/api.js`, `frontend/src/pages/PricingPage.jsx`, `frontend/src/pages/Dashboard.jsx`, `agent/api_requests.md`, `agent/BACKLOG.md`, `agent/knowledge.md`, `agent/skills/stripe_checkout_fastapi.py`
 Cost: $0.00 (VS Code mode)
