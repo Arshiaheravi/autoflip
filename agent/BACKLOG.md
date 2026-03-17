@@ -10,8 +10,9 @@ picks the highest-value task, implements it, then updates this file.
 - [x] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. SendGrid + SMTP fallback. `/api/auth/subscribe` endpoint added. 58+ unit tests passing. Needs `SENDGRID_API_KEY` in .env to activate.
 - [x] **Subscription payment (Stripe)** — PricingPage Pro CTA now calls `/api/stripe/create-checkout-session`, redirects to Stripe hosted checkout, webhook upgrades `user.plan → 'pro'`. Dashboard shows success banner on return. 239 backend + 42 frontend tests passing. Needs Stripe env vars in .env to go live (see agent/api_requests.md).
 - [x] **Add SalvageReseller.com** — Server-side rendered, no login, Ontario salvage/rebuild, 75 listings/run. Integrated into runner.py, 22 tests passing.
+- [x] **Add Copart Ontario (via SalvageReseller broker)** — Scrapes `salvagereseller.com/cars-for-sale/state/ontario` (2,138 Ontario Copart lots). Source key `copart_on`. 150 listings/run (6 pages × 25). 20 tests passing. No dealer license required (SalvageReseller acts as registered broker).
 - [ ] **Add IAA Canada auctions** — BLOCKED: Incapsula anti-bot + robots.txt disallows /Search. Need API or JS rendering approach.
-- [ ] **Add Copart Canada** — BLOCKED: Anti-bot protection. Same issue as IAA. Research API access.
+- [ ] **Add Copart Canada direct** — BLOCKED: Anti-bot protection. Covered indirectly via SalvageReseller broker above.
 
 ---
 

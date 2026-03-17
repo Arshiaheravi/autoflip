@@ -1,8 +1,8 @@
 # Current Task — CLEARED
 _Last updated: 2026-03-16_
 
-Stripe Checkout integration complete and pushed (commit 38d2e38).
-239 backend tests + 42 frontend tests passing.
+Copart Ontario scraper complete and pushed.
+259 backend tests passing (20 new), frontend build clean.
 
 ## Next Task (next session)
 - [ ] **Side-by-side comparison** — Select 2-3 listings with checkboxes and open a comparison modal showing profit, mileage, damage, ROI side by side.

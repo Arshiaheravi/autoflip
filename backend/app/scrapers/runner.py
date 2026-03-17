@@ -7,6 +7,7 @@ from ..database import db
 from ..scrapers.cathcart import scrape_cathcart
 from ..scrapers.picnsave import scrape_picnsave
 from ..scrapers.salvagereseller import scrape_salvagereseller
+from ..scrapers.copart_ontario import scrape_copart_ontario
 from ..services.ai_damage import detect_damage_from_photo
 from ..services.autotrader import estimate_market_value_blended
 from ..services.calculations import get_repair_range, calculate_ontario_fees, calc_deal_score
@@ -112,6 +113,11 @@ async def run_full_scrape():
         salvage = await scrape_salvagereseller()
         all_listings.extend(salvage)
         logger.info(f"  Got {len(salvage)} listings")
+
+        logger.info("Scraping Copart Ontario (via SalvageReseller broker)...")
+        copart_on = await scrape_copart_ontario()
+        all_listings.extend(copart_on)
+        logger.info(f"  Got {len(copart_on)} listings")
 
     except Exception as e:
         logger.error(f"Scrape failed: {e}")
@@ -302,6 +308,7 @@ async def run_full_scrape():
                 "cathcart_used": len([l for l in all_listings if l["source"] == "cathcart_used"]),
                 "picnsave": len([l for l in all_listings if l["source"] == "picnsave"]),
                 "salvagereseller": len([l for l in all_listings if l["source"] == "salvagereseller"]),
+                "copart_on": len([l for l in all_listings if l["source"] == "copart_on"]),
             }
         }},
         upsert=True

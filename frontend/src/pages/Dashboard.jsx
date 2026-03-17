@@ -223,7 +223,7 @@ export default function Dashboard() {
             {t('dashboard.lastScan')} {stats.last_scrape.finished_at ? new Date(stats.last_scrape.finished_at).toLocaleString() : t('dashboard.running')}
           </div>
           <Separator orientation="vertical" className="h-3 bg-border/50" />
-          <div>{t('dashboard.sources')} Cathcart Rebuilders ({stats.source_counts?.cathcart_rebuilders || 0}), Used ({stats.source_counts?.cathcart_used || 0}), Pic N Save ({stats.source_counts?.picnsave || 0}), SalvageReseller ({stats.source_counts?.salvagereseller || 0})</div>
+          <div>{t('dashboard.sources')} Cathcart Rebuilders ({stats.source_counts?.cathcart_rebuilders || 0}), Used ({stats.source_counts?.cathcart_used || 0}), Pic N Save ({stats.source_counts?.picnsave || 0}), SalvageReseller ({stats.source_counts?.salvagereseller || 0}), Copart ON ({stats.source_counts?.copart_on || 0})</div>
           {stats.best_deal && (
             <>
               <Separator orientation="vertical" className="h-3 bg-border/50" />
@@ -245,6 +245,7 @@ export default function Dashboard() {
             <SelectItem value="cathcart_used">{t('dashboard.cathcartUsed')}</SelectItem>
             <SelectItem value="picnsave">{t('dashboard.picnsave')}</SelectItem>
             <SelectItem value="salvagereseller">SalvageReseller</SelectItem>
+            <SelectItem value="copart_on">Copart Ontario</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filters.brand_type || 'all'} onValueChange={(v) => updateFilter('brand_type', v === 'all' ? '' : v)}>
