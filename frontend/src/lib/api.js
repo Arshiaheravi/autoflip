@@ -33,4 +33,9 @@ export const authApi = {
   logout: () => api.post('/auth/logout'),
 };
 
+export const stripeApi = {
+  createCheckoutSession: (billingPeriod) =>
+    api.post('/stripe/create-checkout-session', { billing_period: billingPeriod }),
+};
+
 export default api;

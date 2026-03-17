@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
+import { stripeApi } from '@/lib/api';
 import {
   Zap, CheckCircle2, ArrowRight, Star, Shield, Clock,
   Bell, Brain, TrendingUp, Users, X,
@@ -98,6 +99,23 @@ function PlanCard({ title, price, period, priceNote, features, cta, highlighted,
 export default function PricingPage({ onSignup, onLogin, onClose }) {
   const { user, isAuthenticated } = useAuth();
   const [billingPeriod, setBillingPeriod] = useState('yearly');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
+
+  async function handleUpgrade() {
+    if (!isAuthenticated) { onSignup && onSignup(); return; }
+    setCheckoutLoading(true);
+    setCheckoutError('');
+    try {
+      const res = await stripeApi.createCheckoutSession(billingPeriod);
+      window.location.href = res.data.url;
+    } catch (err) {
+      const msg = err?.response?.data?.detail || 'Checkout unavailable. Please try again.';
+      setCheckoutError(msg);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
 
   const monthlyPrice = '$4.99';
   const yearlyPrice = '$39.99';
@@ -213,16 +231,21 @@ export default function PricingPage({ onSignup, onLogin, onClose }) {
             }
             features={FEATURES_PRO}
             cta={
+              checkoutLoading ? 'Redirecting…' :
               isAuthenticated
                 ? user?.plan === 'pro' ? '✓ Current Plan' : 'Upgrade to Pro'
                 : 'Start Pro Free Trial'
             }
             highlighted
             badge="Most Popular"
-            disabled={isAuthenticated && user?.plan === 'pro'}
-            onSelect={isAuthenticated ? () => {} : onSignup}
+            disabled={(isAuthenticated && user?.plan === 'pro') || checkoutLoading}
+            onSelect={handleUpgrade}
           />
         </div>
+
+        {checkoutError && (
+          <p className="text-center text-sm text-red-400 -mt-10 mb-10">{checkoutError}</p>
+        )}
 
         {/* How it works */}
         <div className="mb-14">

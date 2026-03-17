@@ -146,6 +146,7 @@ export default function Dashboard() {
   const [selectedListing, setSelectedListing] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const { isSaved, toggle, count: savedCount } = useWatchlist();
   const [filters, setFilters] = useState({
     source: '', search: '', min_profit: '', max_price: '',
@@ -183,12 +184,28 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      setCheckoutSuccess(true);
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setCheckoutSuccess(false), 8000);
+    }
+  }, []);
+
   const updateFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
 
   const displayListings = activeTab === 'saved' ? listings.filter(l => isSaved(l)) : listings;
 
   return (
     <main className="max-w-[1600px] mx-auto px-4 md:px-8 py-6 space-y-5" data-testid="dashboard-page">
+      {checkoutSuccess && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-sm text-emerald-400 text-sm" data-testid="checkout-success-banner">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span><strong>Welcome to AutoFlip Pro!</strong> Your subscription is active — BUY deal alerts are now enabled.</span>
+          <button onClick={() => setCheckoutSuccess(false)} className="ml-auto hover:opacity-70"><X className="h-4 w-4" /></button>
+        </div>
+      )}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3" data-testid="stats-bar">
           <StatCard label={t('dashboard.totalListings')} value={stats.total_listings} icon={Car} />
