@@ -1019,8 +1019,48 @@ Common JSX pitfalls: unescaped apostrophes in single-quoted strings (`We're` →
 
 DO NOT write DONE block until every applicable checkbox above is confirmed green.
 
+### PHASE 4.5: Browser E2E Validation — MANDATORY for any UI change
+After any frontend change, validate it like a real user using Playwright:
+
+```python
+# Run this Python script to verify the UI works in a real browser
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+    page.goto("http://localhost:3000")
+    page.wait_for_load_state("networkidle")
+
+    # Verify app loaded
+    assert page.title() != "", "Page title missing"
+
+    # Verify listings loaded (not empty)
+    page.wait_for_selector("[data-testid='listing-row'], .listing-card", timeout=10000)
+    count = page.locator("[data-testid='listing-row']").count()
+    assert count > 0, f"No listings shown — got {count}"
+
+    # Screenshot for debugging
+    page.screenshot(path="agent/e2e_screenshot.png")
+    browser.close()
+    print(f"E2E PASS: {count} listings visible")
+```
+
+Save this as `agent/e2e_check.py` and run: `py agent/e2e_check.py`
+
+**For any specific new feature, also test it:**
+- New filter? → select it, verify results change
+- New modal? → click the trigger, verify modal opens with correct data
+- New button? → click it, verify expected behaviour
+- New badge/indicator? → verify it appears on correct listings
+
+**If E2E fails → fix before committing. Screenshots saved to agent/e2e_screenshot.png for debugging.**
+
+Always research the latest Playwright patterns before writing E2E tests:
+`web_search("playwright 2026 best practices page object model")`
+
 ### PHASE 5: Commit & Push
-Only after ALL checks pass:
+Only after ALL checks pass (including E2E):
 ```
 git add -A
 git commit -m "agent: <what changed> — <why it matters>"
@@ -1047,12 +1087,28 @@ Check the Skill Library section in context first — it may already have what yo
 Did anything make you think "I should know more about this"? Call `add_to_research_queue`.
 Examples: a library you used without fully understanding, a competitor you heard of, a technique that might help.
 
+**Step B2 — Technology research** (EVERY session — non-negotiable):
+Search for what top developers are doing RIGHT NOW that you are not:
+```
+web_search("2026 React best practices production")
+web_search("FastAPI performance optimization 2026")
+web_search("Playwright E2E testing patterns 2026")
+web_search("autonomous AI agent architecture 2026")
+web_search("SaaS car marketplace features 2026")
+```
+Pick ONE thing you found that would genuinely improve AutoFlip or your own intelligence.
+Add it to `agent/research_queue.md` with source URL and why it matters.
+If it's immediately actionable (< 30 min to implement), implement it this session.
+This is how the agent stays current with the industry without human guidance.
+
 **Step C — Agent self-modification** (at least every 3rd session):
 Ask yourself: "What would make me meaningfully smarter or faster next session?"
 - A missing tool? Add it to TOOLS + execute_tool.
 - A weak context section? Improve build_context().
 - A prompt gap? Sharpen SYSTEM_PROMPT.
 - A repeated mistake? Add a guard or warning.
+- A better testing approach found in research? Add it to Phase 4.5.
+- A new Playwright pattern discovered? Update agent/e2e_check.py.
 The agent next session should be measurably better than you right now.
 
 **Step D — Run health check** (ALWAYS before task_complete):
@@ -1635,14 +1691,25 @@ PHASE 4 — Validate: run import check + tests + frontend build before every com
     → cd frontend && "C:\\Program Files\\nodejs\\npm.cmd" run build 2>&1 | tail -5
     → git push completed — confirm with git log --oneline -3
   DO NOT write DONE block until every applicable item above is confirmed.
+PHASE 4.5 — Browser E2E validation (MANDATORY for any UI change):
+  Run: py agent/e2e_check.py
+  If it fails, fix the issue before committing. Screenshot saved to agent/e2e_screenshot.png.
+  For new features, ALSO write a specific Playwright test that exercises the new UI.
+  Update agent/e2e_check.py to include the new check so future sessions catch regressions.
 PHASE 5 — Commit & push: git add -A && git commit && git push.
 PHASE 6 — Self-reflect & grow (MANDATORY, NO EXCEPTIONS):
   A. Append a concrete lesson to agent/knowledge.md
   B. call save_skill for any reusable pattern you wrote
+  B2. Technology research — web_search for 2 of these every session:
+      "React 2026 best practices", "FastAPI optimization 2026", "Playwright patterns 2026",
+      "autonomous agent architecture 2026", "SaaS car marketplace features competitors"
+      Add ONE finding to agent/research_queue.md. Implement immediately if < 30 min.
   C. call add_to_research_queue for any knowledge gap you noticed
   D. Run health check — fix any regressions before finishing
-  E. Update agent/BACKLOG.md — mark item [x] done, add new ideas
+  E. Update agent/BACKLOG.md — mark item [x] done, add new ideas discovered in research
   F. Update or delete agent/current_task.md
+  G. Agent self-upgrade — ask: "What tool, prompt, or workflow would make me smarter next session?"
+     If found: modify agent/run.py SYSTEM_PROMPT or e2e_check.py to add it.
 
 === END YOUR RESPONSE WITH THIS EXACT BLOCK ===
 DONE: <one sentence: what was accomplished>
