@@ -1,15 +1,9 @@
-# Current Task — Side-by-Side Comparison Modal
+# Current Task — CLEARED
 _Last updated: 2026-03-17_
 
-## Completed Steps
-- [x] Read Dashboard.jsx, ListingDetail.jsx, utils-app.js, Dashboard.test.jsx
+Side-by-side comparison modal complete. 261 backend tests, frontend build passes.
 
-## Remaining Steps
-- [ ] Create CompareModal.jsx component
-- [ ] Add compareListings state + checkboxes to Dashboard.jsx
-- [ ] Add floating compare bar to Dashboard.jsx
-- [ ] Validate build + tests
-- [ ] Commit & push
-
-## Last Commit
-`5dd3b2e agent: session notes — graduated worst-case penalty complete, knowledge updated`
+## Next Task (next session)
+- [ ] **AutoTrader live comps in listing detail** — Add "View on AutoTrader" deep-link button in ListingDetail.jsx that opens AutoTrader pre-filtered by make/model/year/location.
+  OR
+- [ ] **Better mobile layout** — Sticky filter bar, improved card layout, swipe gestures.
