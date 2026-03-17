@@ -163,6 +163,13 @@ After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move t
 - **`e.stopPropagation()` is essential for buttons inside clickable rows.** Without it, clicking the bookmark button also opens the listing modal. Always add stopPropagation to nested interactive elements inside click-to-open containers.
 - **`fill` prop on lucide icons creates filled vs outline variants.** `<Bookmark fill="currentColor" />` renders a filled bookmark; `fill="none"` renders the outline. This is the cleanest way to show active/inactive state for icon-only buttons.
 
+### 2026-03-16 — Stripe Checkout Session
+- **Check for existing files before implementing**: Both `stripe_routes.py` and `test_stripe_routes.py` were already fully written in a prior session — this session just needed to commit the files and wire the frontend. Always check `git status` and read the file tree before assuming a feature needs to be written from scratch.
+- **Stripe webhook requires raw request body**: Never let FastAPI/Starlette parse the body as JSON before `stripe.Webhook.construct_event()` — call `await request.body()` directly. The signature verification will fail on a parsed body.
+- **`window.location.href = url` for cross-origin redirects**: Stripe Checkout is on `checkout.stripe.com`. React Router `navigate()` only works for same-origin routes. Use `window.location.href` to redirect to an external URL.
+- **Clear checkout params from URL after success**: After Stripe redirects back to `/?checkout=success&session_id=...`, call `window.history.replaceState({}, '', pathname)` to clean the URL so a page refresh doesn't re-show the banner.
+- **Stripe price IDs must be created in the Stripe Dashboard**: The backend references `STRIPE_PRICE_MONTHLY_ID` and `STRIPE_PRICE_YEARLY_ID` env vars. The owner must create Products + Prices in Stripe Dashboard and copy the Price IDs — the backend cannot create them automatically.
+
 ### 2026-03-16 — Deal Intelligence Session
 - **ROI tiers in calc_deal_score must match flipper economics**: A single ±1 ROI adjustment was too coarse — $2k profit on $2k car (100% ROI) and $2k profit on $20k car (10% ROI) got the same base score. Extended to: roi>100%→+2, roi>60%→+1, roi<-30%→-2, roi<-10%→-1. Two new tests added (225 total).
 - **run_experiment gate works best when changes add new tests**: The previous mileage experiment failed with delta=0 because it modified scores but no new tests were added to capture the expected new behavior. Always add tests that assert the specific new behavior — this makes the metric_after > metric_before clear.

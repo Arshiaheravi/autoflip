@@ -8,3 +8,4 @@ Reusable patterns saved by the agent. Check here before writing from scratch.
 - **sendgrid_with_smtp_fallback** — Send email via SendGrid with SMTP fallback and silent fail if keys missing (`agent/skills/sendgrid_with_smtp_fallback.py`)
 - **auction_listing_scraper** — Paginated auction site scraper with crawl-delay, miles→km conversion, buy-now/bid price extraction, brand status mapping (`agent/skills/auction_listing_scraper.py`)
 - **localstorage_watchlist_hook** — React useWatchlist hook: toggle/isSaved/count backed by localStorage, with mock pattern for jest.mock, stopPropagation rule, and lucide fill trick (`agent/skills/localstorage_watchlist_hook.py`)
+- **stripe_checkout_fastapi** — Stripe Checkout Session creation + webhook handler for FastAPI/Motor: raw body for sig verification, customer reuse, checkout.session.completed upgrade flow, frontend redirect + success banner pattern (`agent/skills/stripe_checkout_fastapi.py`)

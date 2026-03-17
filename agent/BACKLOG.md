@@ -8,7 +8,7 @@ picks the highest-value task, implements it, then updates this file.
 ## 🔴 HIGH PRIORITY — Revenue / Core
 
 - [x] **Deal alert email notifications** — When a new BUY deal (score 8+) is scraped, email subscribed users within 10 minutes. SendGrid + SMTP fallback. `/api/auth/subscribe` endpoint added. 58+ unit tests passing. Needs `SENDGRID_API_KEY` in .env to activate.
-- [ ] **Subscription payment (Stripe)** — Wire up the existing PricingPage Pro CTA to a real Stripe Checkout. Users can pay $4.99/mo or $39.99/yr. Webhook updates user.plan → 'pro'. `/api/auth/subscribe` endpoint already built and ready.
+- [x] **Subscription payment (Stripe)** — PricingPage Pro CTA now calls `/api/stripe/create-checkout-session`, redirects to Stripe hosted checkout, webhook upgrades `user.plan → 'pro'`. Dashboard shows success banner on return. 239 backend + 42 frontend tests passing. Needs Stripe env vars in .env to go live (see agent/api_requests.md).
 - [x] **Add SalvageReseller.com** — Server-side rendered, no login, Ontario salvage/rebuild, 75 listings/run. Integrated into runner.py, 22 tests passing.
 - [ ] **Add IAA Canada auctions** — BLOCKED: Incapsula anti-bot + robots.txt disallows /Search. Need API or JS rendering approach.
 - [ ] **Add Copart Canada** — BLOCKED: Anti-bot protection. Same issue as IAA. Research API access.
