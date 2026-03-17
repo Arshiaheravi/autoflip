@@ -1,3 +1,4 @@
 commit	metric_before	metric_after	delta	status	hypothesis
 9e5afea	-3.1400	-3.1400	+0.0000	discard	Adding mileage risk penalty to calc_deal_score should improve score accuracy wit
 0ef692a	223	225	+2	keep	Extend ROI tiers: roi>100→+2, roi<-30→-2. Coarse ±1 tier treated $2k on $2k car same as $2k on $20k car
+22f9968	259	261	+2	keep	Graduate worst-case penalty: worst<-2k→-1, worst<-5k→-2, worst<-10k→-3. Flat -1 was too coarse for high-variance deals
