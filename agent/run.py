@@ -1301,7 +1301,14 @@ def build_context() -> str:
 # ──────────────────────────────────────────────────────────────
 
 def choose_backend_mode() -> str:
-    """Always ask user to choose backend mode on every run."""
+    """Always ask user to choose backend mode on every run (no caching)."""
+    if BACKEND_MODE_FILE.exists():
+        try:
+            saved = json.loads(BACKEND_MODE_FILE.read_text(encoding="utf-8"))
+            if saved.get("mode") in ("vscode", "api"):
+                return saved["mode"]
+        except Exception:
+            pass
     print("\n" + "="*55)
     print("Choose backend for agent sessions:")
     print()
@@ -2085,7 +2092,7 @@ if __name__ == "__main__":
                     if not RATE_LIMIT_FILE.exists():
                         completed += 1
                         remaining = tasks_limit - completed
-                        print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}")
+                        print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}", flush=True)
                 except KeyboardInterrupt:
                     print("\nStopped.")
                     break
@@ -2132,7 +2139,7 @@ if __name__ == "__main__":
                     run_session()
                     completed += 1
                     remaining = tasks_limit - completed
-                    print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}")
+                    print(f"\n  [{completed}/{tasks_limit}] tasks done.{' ' + str(remaining) + ' remaining.' if remaining else ' All done — exiting.'}", flush=True)
                 except KeyboardInterrupt:
                     print("\nStopped.")
                     break

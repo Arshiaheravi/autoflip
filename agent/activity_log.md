@@ -3,6 +3,13 @@
 This file records every improvement the autonomous agent makes.
 
 ---
+## 2026-03-17 — FEATURE [vscode]
+**AutoTrader deep-link button in listing detail modal.**
+Added `buildAutotraderUrl(title)` utility to utils-app.js and a "View Comps on AutoTrader" button to ListingDetail.jsx. Clicking opens AutoTrader.ca pre-filtered by listing title + Ontario province — lets users cross-check our blended market value estimate against live retail comps in one click. 261 tests pass, frontend build passes.
+Files: `frontend/src/components/shared/ListingDetail.jsx`, `frontend/src/lib/utils-app.js`
+Cost: $0.00 (VS Code mode)
+
+---
 ## 2026-03-16 — INITIALIZED
 Agent system initialized. Ready to begin improving AutoFlip.
 
@@ -239,4 +246,17 @@ DONE: Graduated the worst-case profit penalty in `calc_deal_score` from a flat `
 IMPACT: Deal scores now accurately reflect downside risk magnitude. A high-variance deal (e.g. $15k best / -$12k worst) gets scored 3 instead of 4 — correctly warning subscribers that the floor scenario is catastrophic, not just inconvenient. Subscribers can trust BUY scores more when worst-case penalty is properly graduated.
 
 FILES: `backend/app/services/calculations.py`, `backend/tests/test_calculations.py`, `agent/experiment_results.tsv`, `agent/knowledge.md`, `agent/BACKLOG.md`, `agent/current_task.md`
+Cost: $0.00 (VS Code mode)
+
+---
+## 2026-03-17 00:24 — FEATURE [vscode]
+**Built and shipped side-by-side comparison modal — users can now select 2-3 listings with checkboxes, trigger a floating compare bar, and open a full comparison grid showing price, mileage, damage, market value, repair range, profit (best/worst), ROI, and deal score with green winner highlighting per metric.**
+Impact: Users can now make faster buy/pass decisions by directly comparing 2-3 deals side by side instead of opening each listing individually — reduces decision friction and makes the value of BUY-scored deals more obvious against lower-scored alternatives.
+Files: `frontend/src/components/shared/CompareModal.jsx`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`, `agent/skills/compare_modal_react.py`, `agent/skills/INDEX.md`, `agent/current_task.md`
+Output tail:
+parison modal — users can now select 2-3 listings with checkboxes, trigger a floating compare bar, and open a full comparison grid showing price, mileage, damage, market value, repair range, profit (best/worst), ROI, and deal score with green winner highlighting per metric.
+
+IMPACT: Users can now make faster buy/pass decisions by directly comparing 2-3 deals side by side instead of opening each listing individually — reduces decision friction and makes the value of BUY-scored deals more obvious against lower-scored alternatives.
+
+FILES: `frontend/src/components/shared/CompareModal.jsx`, `frontend/src/pages/Dashboard.jsx`, `frontend/src/pages/Dashboard.test.jsx`, `agent/BACKLOG.md`, `agent/knowledge.md`, `agent/skills/compare_modal_react.py`, `agent/skills/INDEX.md`, `agent/current_task.md`
 Cost: $0.00 (VS Code mode)

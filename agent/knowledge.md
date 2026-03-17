@@ -245,3 +245,8 @@ After attempt 3: add `[!] Needs investigation: {error}` to BACKLOG.md and move t
 - **`style={{ gridTemplateColumns }}` in JSX for dynamic column count**: Tailwind can't generate dynamic grid column utilities for 2 vs 3 columns at runtime. Use inline `style={{ gridTemplateColumns: \`140px repeat(\${n}, 1fr)\` }}` to dynamically match the number of selected listings.
 - **CompareRow `formatter` with index param pattern**: When the formatter needs to access the original listing object (not just the computed value), pass the index as a second param and look up `listings[i]`. This enables showing "low – high" range from two fields while using a midpoint for winner calculation.
 - **Floating bar with `translate-x-1/2` + `left-1/2`**: The cleanest centered fixed bar: `fixed bottom-6 left-1/2 -translate-x-1/2` + `rounded-full` + drop shadow. No need for flex centering on the parent.
+
+### 2026-03-17 — AutoTrader Deep-Link Session
+- **AutoTrader.ca search URL pattern**: `https://www.autotrader.ca/cars/?kw=ENCODED_TITLE&prv=Ontario` — the `kw` param does fuzzy keyword search across year/make/model. Using the full listing title as keyword yields good comp matches without needing separate make/model/year fields parsed out.
+- **Side-by-side action buttons pattern**: When adding a second action button alongside an existing `w-full` button, wrap both in `flex gap-2` and change each to `flex-1` — both grow equally to fill the row. Avoids breaking the existing button's layout.
+- **Utility function placement**: Small URL-building helpers (`buildAutotraderUrl`) belong in utils-app.js next to other display helpers — keeps ListingDetail.jsx clean and the function testable/reusable.

@@ -23,7 +23,7 @@ picks the highest-value task, implements it, then updates this file.
 - [x] **Side-by-side comparison** — Select 2-3 listings with checkboxes and open a comparison modal showing profit, mileage, damage, ROI side by side. Winner highlighting (green) per metric. Floating compare bar. 261 tests passing.
 - [x] **Improved deal scoring** — Graduated worst-case penalty: worst<-2k→-1, worst<-5k→-2, worst<-10k→-3. Mileage + colour already affect score via market value pipeline. 261 tests passing.
 - [ ] **Better mobile layout** — The desktop table is hidden on mobile but the card view is basic. Add swipe gestures, better photo display, and a sticky filter bar.
-- [ ] **AutoTrader live comps in listing detail** — Show a "View comparable listings on AutoTrader" button that deep-links to AutoTrader with the correct make/model/year/location pre-filled.
+- [x] **AutoTrader live comps in listing detail** — "View Comps on AutoTrader" button in ListingDetail modal. Deep-links to AutoTrader.ca pre-filtered by title keyword + Ontario province. 261 tests passing.
 
 ---
 
