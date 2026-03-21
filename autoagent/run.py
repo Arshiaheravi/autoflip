@@ -3,15 +3,22 @@
 """
 AutoAgent -- Fully Autonomous, Self-Growing Project Intelligence
 
-A plug-and-play autonomous agent that works for ANY project.
-Configure it by editing autoagent/PROJECT.md and autoagent/config.json,
-then run it — no other changes needed.
+Fill in autoagent/PROJECT.md and autoagent/NORTH_STAR.md, then run:
 
-Usage:
-    py -X utf8 autoagent/run.py             # run forever (every N hours)
-    py -X utf8 autoagent/run.py --once      # run one session then exit
-    py -X utf8 autoagent/run.py --status    # print today's spend + recent activity
-    py -X utf8 autoagent/run.py --tasks 3   # run exactly 3 sessions then exit
+    py -X utf8 autoagent/run.py
+
+That's it. Everything else is automatic.
+
+What the default command does:
+  - Starts the main agent (works on your project every N hours)
+  - Starts the meta-agent in a separate window (improves the brain in parallel)
+  - Runs forever, handles rate limits, resumes unfinished tasks automatically
+
+Other options (when you need them):
+    py -X utf8 autoagent/run.py --once      # one session then exit (good for testing)
+    py -X utf8 autoagent/run.py --tasks 3   # exactly 3 sessions then exit
+    py -X utf8 autoagent/run.py --solo      # main agent only, no meta-agent
+    py -X utf8 autoagent/run.py --status    # show today's activity + spend
 """
 import io
 import json
@@ -35,6 +42,13 @@ from dotenv import load_dotenv
 # ─────────────────────────── Paths ────────────────────────────
 ROOT       = Path(__file__).resolve().parent.parent   # project root (one level above autoagent/)
 AGENT_DIR  = Path(__file__).resolve().parent          # autoagent/
+
+# ── Load credentials — checks autoagent/credentials.env first, then .env ──
+_creds_file = AGENT_DIR / "credentials.env"
+if _creds_file.exists():
+    load_dotenv(_creds_file, override=False)
+load_dotenv(ROOT / ".env", override=False)
+load_dotenv(ROOT / "backend" / ".env", override=False)
 REPORTS_DIR = AGENT_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
 
@@ -64,48 +78,379 @@ load_dotenv(ROOT / "backend" / ".env")
 
 # ─────────────────────────── Project Context ──────────────────
 
+def _auto_discover_project() -> str:
+    """
+    If PROJECT.md is missing or blank, scan the codebase and build a
+    project description automatically so the agent can work immediately.
+    """
+    import re as _re
+    clues = []
+
+    # package.json → project name, description, dependencies
+    for pkg_path in (ROOT / "package.json", ROOT / "frontend" / "package.json"):
+        if pkg_path.exists():
+            try:
+                data = json.loads(pkg_path.read_text(encoding="utf-8"))
+                name = data.get("name", "")
+                desc = data.get("description", "")
+                deps = list(data.get("dependencies", {}).keys())[:12]
+                if name:
+                    clues.append(f"Frontend package: {name}" + (f" — {desc}" if desc else ""))
+                if deps:
+                    clues.append(f"Frontend deps: {', '.join(deps)}")
+            except Exception:
+                pass
+
+    # requirements.txt / pyproject.toml → backend stack
+    for req_path in (ROOT / "requirements.txt", ROOT / "backend" / "requirements.txt"):
+        if req_path.exists():
+            pkgs = [l.split("==")[0].split(">=")[0].strip()
+                    for l in req_path.read_text(encoding="utf-8").splitlines()
+                    if l.strip() and not l.startswith("#")][:12]
+            if pkgs:
+                clues.append(f"Backend deps: {', '.join(pkgs)}")
+
+    # Detect framework from file structure
+    frameworks = []
+    if (ROOT / "manage.py").exists() or (ROOT / "backend" / "manage.py").exists():
+        frameworks.append("Django")
+    if any((ROOT / p).exists() for p in ("app.py", "main.py", "server.py",
+                                          "backend/app/main.py", "backend/main.py")):
+        frameworks.append("FastAPI/Flask")
+    if (ROOT / "next.config.js").exists() or (ROOT / "frontend" / "next.config.js").exists():
+        frameworks.append("Next.js")
+    if any((ROOT / p).exists() for p in ("vite.config.js", "frontend/vite.config.js")):
+        frameworks.append("Vite/React")
+    if frameworks:
+        clues.append(f"Detected frameworks: {', '.join(frameworks)}")
+
+    # Database hints
+    for db_hint in (("mongo", "MongoDB"), ("postgres", "PostgreSQL"),
+                    ("sqlite", "SQLite"), ("redis", "Redis"), ("supabase", "Supabase")):
+        keyword, name = db_hint
+        for path in (ROOT / "requirements.txt", ROOT / "backend" / "requirements.txt",
+                     ROOT / "package.json", ROOT / "frontend" / "package.json"):
+            if path.exists() and keyword in path.read_text(encoding="utf-8").lower():
+                clues.append(f"Database: {name}")
+                break
+
+    # README.md
+    readme = ROOT / "README.md"
+    if readme.exists():
+        txt = readme.read_text(encoding="utf-8")[:800]
+        clues.append(f"README:\n{txt}")
+
+    if clues:
+        discovered = "\n".join(clues)
+        return (
+            f"PROJECT.md has not been filled in. Auto-discovered project context:\n\n"
+            f"{discovered}\n\n"
+            "YOUR FIRST TASK: Write a complete autoagent/PROJECT.md based on what you observe "
+            "in the codebase. Then continue with the highest-leverage improvement."
+        )
+
+    return (
+        "PROJECT.md not filled in and project could not be auto-detected.\n"
+        "YOUR FIRST TASK: Explore the codebase (ls, read key files), understand what it is, "
+        "then write autoagent/PROJECT.md. After that, generate autoagent/BACKLOG.md and start working."
+    )
+
+
 def load_project_context() -> str:
-    """Load project description from PROJECT.md at runtime."""
+    """Load project description — from PROJECT.md if filled in, else auto-discover."""
     if PROJECT_FILE.exists():
         content = PROJECT_FILE.read_text(encoding="utf-8").strip()
-        if "[Your Project Name]" in content or len(content) < 100:
-            return (
-                "PROJECT.md has not been filled in yet. "
-                "Please edit autoagent/PROJECT.md to describe your project, "
-                "tech stack, business model, and goals. "
-                "The agent will work generically until you do."
-            )
-        return content
-    return (
-        "No PROJECT.md found. "
-        "Create autoagent/PROJECT.md describing your project, tech stack, business model, and goals."
-    )
+        if "[Your Project Name]" not in content and len(content) >= 100:
+            return content
+    return _auto_discover_project()
 
 
 # ─────────────────────────── Config ───────────────────────────
 
+def _auto_discover_urls() -> dict[str, str]:
+    """
+    Scan the project to discover frontend + backend URLs without user input.
+    Checks (in order): config.json → PROJECT.md → package.json → .env files
+    → vite/next/angular configs → common port probe.
+    Returns {"frontend_url": ..., "backend_url": ...} with best guesses.
+    """
+    import re as _re
+    import urllib.request as _ur
+
+    found: dict[str, str] = {}
+
+    # ── 1. PROJECT.md — look for port/URL mentions ─────────────
+    if PROJECT_FILE.exists():
+        txt = PROJECT_FILE.read_text(encoding="utf-8")
+        # backend port patterns: "port 8001", ":8001", "--port 8001"
+        be_matches = _re.findall(r'(?:port\s+|:)(\d{4,5})', txt, _re.IGNORECASE)
+        # frontend patterns: "localhost:3000", "PORT=3000", "npm start"→3000
+        fe_matches = _re.findall(r'localhost:(\d{4,5})', txt)
+        # heuristic: lower port = frontend, higher port = backend
+        all_ports = sorted(set(int(p) for p in be_matches + fe_matches if 1000 < int(p) < 65535))
+        if len(all_ports) >= 2:
+            found["frontend_url"] = f"http://localhost:{all_ports[0]}"
+            found["backend_url"]  = f"http://localhost:{all_ports[1]}"
+        elif len(all_ports) == 1:
+            # single port — decide by common convention
+            p = all_ports[0]
+            if p in (3000, 5173, 4200, 8080):
+                found["frontend_url"] = f"http://localhost:{p}"
+            else:
+                found["backend_url"] = f"http://localhost:{p}"
+
+    # ── 2. package.json — "start": "PORT=XXXX react-scripts start" ──
+    if "frontend_url" not in found:
+        pkg = ROOT / "frontend" / "package.json"
+        if not pkg.exists():
+            pkg = ROOT / "package.json"
+        if pkg.exists():
+            try:
+                data = json.loads(pkg.read_text(encoding="utf-8"))
+                scripts = data.get("scripts", {})
+                for v in scripts.values():
+                    m = _re.search(r'PORT[=\s]+(\d{4,5})', str(v))
+                    if m:
+                        found["frontend_url"] = f"http://localhost:{m.group(1)}"
+                        break
+                # vite default
+                if "frontend_url" not in found and "vite" in str(scripts):
+                    found["frontend_url"] = "http://localhost:5173"
+                # CRA default
+                if "frontend_url" not in found and "react-scripts" in str(scripts):
+                    found["frontend_url"] = "http://localhost:3000"
+                # Next.js default
+                if "frontend_url" not in found and "next" in str(scripts):
+                    found["frontend_url"] = "http://localhost:3000"
+            except Exception:
+                pass
+
+    # ── 3. vite.config / next.config / angular.json ─────────────
+    if "frontend_url" not in found:
+        for cfg_name in ("vite.config.js", "vite.config.ts", "next.config.js", "angular.json"):
+            cfg_path = ROOT / cfg_name
+            if not cfg_path.exists():
+                cfg_path = ROOT / "frontend" / cfg_name
+            if cfg_path.exists():
+                txt = cfg_path.read_text(encoding="utf-8")
+                m = _re.search(r'port\s*[:=]\s*(\d{4,5})', txt)
+                if m:
+                    found["frontend_url"] = f"http://localhost:{m.group(1)}"
+                    break
+
+    # ── 4. .env files — BACKEND_URL, API_URL, PORT ───────────────
+    for env_path in (ROOT / ".env", ROOT / "backend" / ".env", ROOT / "frontend" / ".env"):
+        if not env_path.exists():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("#"):
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip().upper()
+            val = val.strip().strip('"').strip("'")
+            if key in ("BACKEND_URL", "API_URL", "REACT_APP_BACKEND_URL", "VITE_API_URL", "NEXT_PUBLIC_API_URL"):
+                found["backend_url"] = val
+            if key == "PORT" and "frontend_url" not in found:
+                found["frontend_url"] = f"http://localhost:{val}"
+
+    # ── 5. uvicorn / gunicorn / flask / django run command ───────
+    if "backend_url" not in found and PROJECT_FILE.exists():
+        txt = PROJECT_FILE.read_text(encoding="utf-8")
+        m = _re.search(r'--port\s+(\d{4,5})', txt)
+        if m:
+            found["backend_url"] = f"http://localhost:{m.group(1)}"
+
+    # ── 6. Live port probe — try common ports ────────────────────
+    def _alive(url: str) -> bool:
+        try:
+            _ur.urlopen(url, timeout=1)
+            return True
+        except Exception:
+            return False
+
+    if "frontend_url" not in found:
+        for p in (3000, 5173, 4200, 8080, 4000):
+            if _alive(f"http://localhost:{p}"):
+                found["frontend_url"] = f"http://localhost:{p}"
+                break
+
+    if "backend_url" not in found:
+        for p in (8001, 8000, 5000, 5001, 3001, 8080):
+            if _alive(f"http://localhost:{p}"):
+                found["backend_url"] = f"http://localhost:{p}"
+                break
+
+    # ── 7. Safe defaults ─────────────────────────────────────────
+    found.setdefault("frontend_url", "http://localhost:3000")
+    found.setdefault("backend_url",  "http://localhost:8000")
+
+    return found
+
+
+# Model → cost lookup (auto-derived so user never needs to set these)
+_MODEL_PRICING = {
+    "claude-haiku-4-5-20251001": {"input_cost_per_token": 1e-6,  "output_cost_per_token": 5e-6},
+    "claude-sonnet-4-6":         {"input_cost_per_token": 3e-6,  "output_cost_per_token": 15e-6},
+    "claude-opus-4-6":           {"input_cost_per_token": 5e-6,  "output_cost_per_token": 25e-6},
+}
+
+
 def load_config() -> dict:
+    # ── Hardcoded smart defaults — every key is optional in config.json ──
     defaults = {
+        # Model: agent can switch this autonomously per session if needed
         "model": "claude-sonnet-4-6",
+        # Budget: only relevant in API mode (VS Code mode = free)
         "daily_limit_usd": 15.0,
+        # How often to run a session (hours). Agent may shorten this if backlog is hot.
         "interval_hours": 2,
         "session_max_turns": 50,
-        "input_cost_per_token": 3e-6,
-        "output_cost_per_token": 15e-6,
-        "frontend_url": "http://localhost:3000",
-        "backend_url": "http://localhost:8000"
+        # Git: two separate repos — project repo + autoagent repo
+        # Rule: if token + repo_url are set → ALWAYS commit and push. No toggles.
+        # If not set → commits locally only, no remote operations.
+        "git": {
+            # ── Your project's repo (agent commits project code here) ──
+            "project": {
+                "token":         "",      # GitHub PAT for your project repo
+                "repo_url":      "",      # https://github.com/you/your-project.git
+                "branch":        "auto",  # auto-detect, or set "main" / "dev"
+                "commit_prefix": "agent"  # "agent: add feature X"
+            },
+            # ── AutoAgent's own repo (agent commits its own improvements here) ──
+            "autoagent": {
+                "token":         "",      # GitHub PAT for autoagent repo (can be different)
+                "repo_url":      "",      # https://github.com/you/autoagent.git
+                "branch":        "auto",
+                "commit_prefix": "meta"   # "meta: improve orchestrator prompt"
+            }
+        }
     }
+
+    # ── Load config.json if it exists — only overrides what's set ────────
     if CONFIG_FILE.exists():
         try:
             saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            # Deep-merge git section so partial overrides work
+            if "git" in saved:
+                git_saved = saved.pop("git")
+                if "project" in git_saved:
+                    defaults["git"]["project"].update(git_saved.pop("project"))
+                if "autoagent" in git_saved:
+                    defaults["git"]["autoagent"].update(git_saved.pop("autoagent"))
+                defaults["git"].update(git_saved)
             defaults.update(saved)
         except Exception:
             pass
+
+    # ── Auto-derive token costs from model (user never needs to set these) ─
+    model = defaults.get("model", "claude-sonnet-4-6")
+    pricing = _MODEL_PRICING.get(model, _MODEL_PRICING["claude-sonnet-4-6"])
+    defaults.setdefault("input_cost_per_token",  pricing["input_cost_per_token"])
+    defaults.setdefault("output_cost_per_token", pricing["output_cost_per_token"])
+    # Always keep in sync with model even if user had old values
+    if "input_cost_per_token" not in (CONFIG_FILE.exists() and
+                                       json.loads(CONFIG_FILE.read_text(encoding="utf-8")) or {}):
+        defaults["input_cost_per_token"]  = pricing["input_cost_per_token"]
+        defaults["output_cost_per_token"] = pricing["output_cost_per_token"]
+
+    # ── Auto-discover frontend/backend URLs if not explicitly set ─────────
+    if "frontend_url" not in defaults or "backend_url" not in defaults:
+        discovered = _auto_discover_urls()
+        defaults.setdefault("frontend_url", discovered["frontend_url"])
+        defaults.setdefault("backend_url",  discovered["backend_url"])
+
+    # ── Git: wire each repo's token into its authenticated URL ──────────
+    import re as _re
+
+    def _setup_git_repo(repo_cfg: dict, cwd: str) -> dict:
+        """Build auth URL, detect branch. Returns enriched repo_cfg."""
+        token    = repo_cfg.get("token", "").strip()
+        repo_url = repo_cfg.get("repo_url", "").strip()
+        if token and repo_url:
+            auth_url = _re.sub(r"https://", f"https://{token}@", repo_url)
+            repo_cfg["_auth_url"]  = auth_url
+            repo_cfg["_enabled"]   = True   # has credentials → always commit + push
+        else:
+            repo_cfg["_auth_url"]  = ""
+            repo_cfg["_enabled"]   = False  # no credentials → local commits only
+        # Auto-detect branch
+        if repo_cfg.get("branch", "auto") == "auto":
+            try:
+                r = subprocess.run("git branch --show-current", shell=True,
+                                   capture_output=True, text=True, cwd=cwd)
+                repo_cfg["branch"] = r.stdout.strip() or "main"
+            except Exception:
+                repo_cfg["branch"] = "main"
+        return repo_cfg
+
+    defaults["git"]["project"]   = _setup_git_repo(defaults["git"]["project"],   str(ROOT))
+    defaults["git"]["autoagent"] = _setup_git_repo(defaults["git"]["autoagent"], str(AGENT_DIR))
+
     return defaults
 
 
 cfg    = load_config()
 client = None  # initialized only in API mode
+
+
+def _git_rules() -> str:
+    """Return a clear two-repo git policy for injection into the agent prompt."""
+    g        = cfg.get("git", {})
+    proj     = g.get("project",   {})
+    aa       = g.get("autoagent", {})
+
+    proj_on  = proj.get("_enabled", False)
+    aa_on    = aa.get("_enabled",   False)
+    proj_br  = proj.get("branch",   "main")
+    aa_br    = aa.get("branch",     "main")
+    proj_pfx = proj.get("commit_prefix", "agent")
+    aa_pfx   = aa.get("commit_prefix",   "meta")
+
+    lines = [
+        "=== GIT POLICY — TWO SEPARATE REPOS (follow exactly) ===",
+        "",
+        "RULE: Project code and AutoAgent code are NEVER committed to the same repo.",
+        "",
+        "── 1. PROJECT REPO (your changes to the project being built) ──",
+    ]
+    if proj_on:
+        lines += [
+            f"  COMMIT: YES — after every logical step: git add <project files> && git commit -m '{proj_pfx}: <what> — <why>'",
+            f"  PUSH  : YES — immediately after commit: git push origin {proj_br}",
+            f"  PULL  : YES — at session start: git pull origin {proj_br}",
+            f"  FILES : everything EXCEPT the autoagent/ folder",
+        ]
+    else:
+        lines += [
+            "  COMMIT: YES — commit project changes locally (no remote configured)",
+            "  PUSH  : NO  — no project token/repo set in config.json",
+            "  FILES : everything EXCEPT the autoagent/ folder",
+        ]
+
+    lines += [
+        "",
+        "── 2. AUTOAGENT REPO (improvements to the agent system itself) ──",
+    ]
+    if aa_on:
+        lines += [
+            f"  COMMIT: YES — after any change to autoagent/ files: cd autoagent && git add . && git commit -m '{aa_pfx}: <what>'",
+            f"  PUSH  : YES — immediately after: git push origin {aa_br}",
+            f"  FILES : ONLY files inside the autoagent/ folder",
+        ]
+    else:
+        lines += [
+            "  COMMIT: YES — commit autoagent improvements locally (no remote configured)",
+            "  PUSH  : NO  — no autoagent token/repo set in config.json",
+            "  FILES : ONLY files inside the autoagent/ folder",
+        ]
+
+    lines += [
+        "",
+        "NEVER mix project files and autoagent/ files in the same commit.",
+        "=========================================================",
+    ]
+    return "\n".join(lines)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1112,9 +1457,20 @@ def build_context() -> str:
             f"Progress: {cp['progress']}"
         )
 
-    # Backlog (priorities)
-    if BACKLOG_FILE.exists():
-        parts.append(f"## BACKLOG (your priorities)\n{BACKLOG_FILE.read_text(encoding='utf-8')}")
+    # Backlog (priorities) — auto-generate if missing or empty
+    backlog_content = BACKLOG_FILE.read_text(encoding="utf-8").strip() if BACKLOG_FILE.exists() else ""
+    if not backlog_content or len(backlog_content) < 50:
+        parts.append(
+            "## BACKLOG\n"
+            "No backlog exists yet. Your FIRST task this session:\n"
+            "1. Read PROJECT.md and NORTH_STAR.md carefully.\n"
+            "2. Generate a smart 10-task backlog based on the goal and current project state.\n"
+            "3. Write it to autoagent/BACKLOG.md in `- [ ] task` format.\n"
+            "4. Pick the highest-leverage task and start it.\n"
+            "Think like a co-founder: what 10 things will move the North Star metric fastest?"
+        )
+    else:
+        parts.append(f"## BACKLOG (your priorities)\n{backlog_content}")
 
     # Accumulated knowledge from past sessions
     if KNOWLEDGE_FILE.exists():
@@ -1313,31 +1669,57 @@ def choose_backend_mode() -> str:
                 return saved["mode"]
         except Exception:
             pass
-    print("\n" + "="*55)
-    print("Choose backend for agent sessions:")
+
+    # ── Check credential status ───────────────────────────────
+    api_key      = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    cli_active   = os.environ.get("CLAUDE_CLI_ACTIVE", "").strip().lower() == "true"
+    npm_bin      = os.path.join(os.environ.get("APPDATA", ""), "npm")
+    claude_cmd   = os.path.join(npm_bin, "claude.cmd")
+    cli_installed = os.path.exists(claude_cmd)
+
+    api_status = "✅ key found" if api_key else "❌ not set  (add to autoagent/credentials.env)"
+    cli_status = "✅ active"   if (cli_active and cli_installed) else (
+                 "✅ installed (run: claude  to activate)" if cli_installed else
+                 "❌ not found (run: npm install -g @anthropic-ai/claude-code)")
+
+    print("\n" + "="*58)
+    print("  AutoAgent — Choose your AI backend")
+    print("="*58)
     print()
-    print("  1) vscode  — Claude Code (VS Code subscription)")
-    print("              No API cost. Auto-waits on rate limit.")
+    print(f"  1) VS Code / Claude CLI  — FREE")
+    print(f"     Status : {cli_status}")
+    print(f"     Cost   : $0 — uses your Claude Pro subscription")
+    print(f"     Limits : rate-limited per hour, auto-resumes")
     print()
-    print("  2) api     — Anthropic API (pay-per-token)")
-    print(f"              ${cfg['daily_limit_usd']:.0f}/day budget. Faster.")
-    print("="*55)
+    print(f"  2) Anthropic API         — pay per token")
+    print(f"     Status : {api_status}")
+    print(f"     Cost   : up to ${cfg['daily_limit_usd']:.0f}/day (set in config.json)")
+    print(f"     Limits : none (runs as fast as possible)")
+    print()
+    print("  To set credentials: edit autoagent/credentials.env")
+    print("  To switch later:    delete autoagent/backend_mode.json")
+    print("="*58)
 
     while True:
         try:
-            choice = input("Enter 1 or 2 [default: 1]: ").strip()
+            choice = input("  Enter 1 or 2 [default: 1]: ").strip()
         except (EOFError, KeyboardInterrupt):
             choice = "1"
         if choice in ("", "1", "vscode"):
             mode = "vscode"
             break
         elif choice in ("2", "api"):
+            if not api_key:
+                print("\n  ⚠ No ANTHROPIC_API_KEY found.")
+                print("  Add it to autoagent/credentials.env then re-run.")
+                print("  Or pick option 1 (free).\n")
+                continue
             mode = "api"
             break
-        print("Enter 1 or 2")
+        print("  Enter 1 or 2")
 
     BACKEND_MODE_FILE.write_text(json.dumps({"mode": mode}, indent=2), encoding="utf-8")
-    print(f"Mode '{mode}' saved. Delete autoagent/backend_mode.json to re-select.\n")
+    print(f"\n  Mode '{mode}' saved.\n")
     return mode
 
 
@@ -1435,6 +1817,279 @@ def _call_vscode_claude(full_prompt: str, timeout: int = 300) -> tuple:
 
 
 # ──────────────────────────────────────────────────────────────
+# NORTH STAR MULTI-AGENT ORCHESTRATION
+# ──────────────────────────────────────────────────────────────
+
+def _is_north_star_configured() -> bool:
+    """Return True if NORTH_STAR.md exists and has been filled in by the user."""
+    ns_path = AGENT_DIR / "NORTH_STAR.md"
+    if not ns_path.exists():
+        return False
+    content = ns_path.read_text(encoding="utf-8")
+    # Check that placeholder text has been replaced
+    unfilled_markers = [
+        "[e.g.,",
+        "Goal: [",
+        "Target: [",
+        "Reason: [",
+        "Command: [",
+    ]
+    return not any(marker in content for marker in unfilled_markers)
+
+
+def run_north_star_session() -> bool:
+    """
+    Run the full multi-agent North Star session.
+
+    Sequence:
+      1. Orchestrator reads NORTH_STAR.md, measures metric, forms hypotheses,
+         writes mission_brief.md, selects specialist agents.
+      2. Each selected specialist runs in order, reading the brief and reporting.
+      3. Orchestrator synthesizes all reports.
+      4. If metric stagnant 3+ sessions, pivot mode triggers BACKLOG rewrite.
+
+    Returns True if the North Star session ran (caller should skip single-agent session).
+    Returns False if something went wrong (caller falls back to single-agent session).
+    """
+    import sys as _sys
+    import importlib
+
+    # Ensure agents/ is importable
+    agents_dir = AGENT_DIR / "agents"
+    agents_str = str(agents_dir)
+    if agents_str not in _sys.path:
+        _sys.path.insert(0, agents_str)
+
+    # Ensure shared/reports/ exists
+    (AGENT_DIR / "shared" / "reports").mkdir(parents=True, exist_ok=True)
+
+    metrics     = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {}
+    session_num = metrics.get("total_sessions", 0) + 1
+
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n{'='*60}")
+    print(f"AutoAgent [North Star Multi-Agent Mode]  |  {ts}")
+    print(f"Session #{session_num}")
+    print('='*60)
+
+    # ── Step 1: Orchestrator ──────────────────────────────────
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "orchestrator", agents_dir / "orchestrator.py"
+        )
+        orch_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(orch_mod)
+    except Exception as e:
+        print(f"  [NorthStar] Failed to load orchestrator: {e}")
+        return False
+
+    orch_result = orch_mod.run(session_num=session_num)
+    if not orch_result.get("success"):
+        print(f"  [NorthStar] Orchestrator failed — falling back to single-agent mode.")
+        return False
+
+    agents_selected = orch_result.get("agents_selected", ["engineer"])
+    metric_now      = orch_result.get("metric_now", "unknown")
+    top_hypothesis  = orch_result.get("top_hypothesis", "")
+
+    print(f"  [NorthStar] Metric: {metric_now}")
+    print(f"  [NorthStar] Activating: {', '.join(agents_selected)}")
+
+    # ── Step 2: Run each specialist ───────────────────────────
+    agent_results: dict[str, dict] = {}
+    agent_module_map = {
+        "engineer":   "engineer",
+        "researcher": "researcher",
+        "designer":   "designer",
+        "strategist": "strategist",
+        "qa":         "qa",
+    }
+
+    for agent_name in agents_selected:
+        module_file = agent_module_map.get(agent_name)
+        if not module_file:
+            continue
+        agent_path = agents_dir / f"{module_file}.py"
+        if not agent_path.exists():
+            print(f"  [NorthStar] WARNING: {agent_path} not found — skipping {agent_name}")
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(agent_name, agent_path)
+            mod  = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            result = mod.run()
+            agent_results[agent_name] = result
+        except Exception as e:
+            print(f"  [NorthStar] {agent_name} raised exception: {e}")
+            agent_results[agent_name] = {"success": False, "error": str(e)}
+
+    # ── Step 3: Orchestrator synthesis ───────────────────────
+    # Build a summary of all agent reports for the synthesis call
+    reports_dir = AGENT_DIR / "shared" / "reports"
+    report_texts = []
+    for agent_name in agents_selected:
+        report_path = reports_dir / f"{agent_name}.md"
+        if report_path.exists():
+            report_texts.append(
+                f"=== {agent_name.upper()} REPORT ===\n"
+                + report_path.read_text(encoding="utf-8")[-3000:]
+            )
+
+    all_reports = "\n\n".join(report_texts) if report_texts else "(no reports written)"
+
+    # Read north_star history to check for stagnation
+    ns_live_path = AGENT_DIR / "shared" / "north_star.md"
+    ns_live      = ns_live_path.read_text(encoding="utf-8") if ns_live_path.exists() else ""
+
+    # Count stagnant sessions: look for rows in measurement history where Delta = 0 or +0
+    import re as _re
+    delta_values = _re.findall(r'\|\s*[\d\-:T ]+\s*\|\s*[\d.]+\s*\|\s*([+\-]?[\d.]+)\s*\|', ns_live)
+    stagnant_sessions = sum(1 for d in delta_values[-3:] if d.strip() in ("0", "+0", "-0", "0.0"))
+    pivot_triggered   = stagnant_sessions >= 3
+
+    if pivot_triggered:
+        print(f"  [NorthStar] PIVOT MODE: metric stagnant for {stagnant_sessions} sessions — triggering backlog rewrite")
+
+    synthesis_prompt = f"""You are the ORCHESTRATOR completing your synthesis for session #{session_num}.
+
+ALL SPECIALIST REPORTS:
+{all_reports}
+
+NORTH STAR LIVE STATUS:
+{ns_live or "(not yet updated)"}
+
+METRIC THIS SESSION: {metric_now}
+TOP HYPOTHESIS THIS SESSION: {top_hypothesis}
+PIVOT MODE: {"YES — metric stagnant 3+ sessions" if pivot_triggered else "NO"}
+
+---
+
+## YOUR SYNTHESIS TASKS
+
+### Task 1: Update shared/north_star.md
+Add a new row to the Measurement History table with today's reading.
+Update the Current Bottleneck Diagnosis section with your assessment.
+Update Active Hypothesis with what you'll bet on next session.
+Write the file to: {str(ns_live_path).replace(chr(92), "/")}
+
+### Task 2: Update shared/hypotheses.md
+Mark any hypotheses from this session as CONFIRMED or REJECTED based on the reports.
+Add new hypotheses surfaced by specialists.
+Write the file to: {str(AGENT_DIR / "shared" / "hypotheses.md").replace(chr(92), "/")}
+
+### Task 3: Update shared/decisions.md
+If any significant strategic decision was made this session, log it.
+Write to: {str(AGENT_DIR / "shared" / "decisions.md").replace(chr(92), "/")}
+
+### Task 4: Update shared/debates.md
+If any specialists disagreed, log the debate and rule on it with evidence.
+Write to: {str(AGENT_DIR / "shared" / "debates.md").replace(chr(92), "/")}
+
+{"### Task 5: PIVOT — Rewrite BACKLOG.md" + chr(10) + "The metric has not moved in 3+ sessions. The current strategy is not working." + chr(10) + "Completely rewrite " + str(AGENT_DIR / "BACKLOG.md").replace(chr(92), "/") + " with a fundamentally different approach." + chr(10) + "Think: what is the ONE thing that would actually move this metric? Bet everything on it." if pivot_triggered else ""}
+
+---
+
+END WITH THIS EXACT BLOCK:
+SYNTHESIS_DONE: <one sentence summary of session outcome>
+METRIC_MOVED: yes | no | unknown
+PIVOT_EXECUTED: {"yes" if pivot_triggered else "no"}
+NEXT_SESSION_PRIORITY: <what the team should focus on next>
+"""
+
+    print("  [NorthStar] Running synthesis...")
+    npm_bin    = os.path.join(os.environ.get("APPDATA", ""), "npm")
+    claude_cmd = os.path.join(npm_bin, "claude.cmd")
+    synth_out  = ""
+    synth_err  = ""
+
+    if os.path.exists(claude_cmd):
+        import tempfile as _tmpmod
+        tmp_path = None
+        try:
+            with _tmpmod.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(synthesis_prompt)
+                tmp_path = f.name
+            env = os.environ.copy()
+            env.pop("ANTHROPIC_API_KEY", None)
+            env.pop("ANTHROPIC_API_KEY_OVERRIDE", None)
+            cmd = f'type "{tmp_path}" | "{claude_cmd}" --print --dangerously-skip-permissions'
+            res = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                timeout=900, encoding="utf-8", errors="replace", cwd=str(ROOT), env=env
+            )
+            synth_out = res.stdout.strip()
+            synth_err = res.stderr.strip()
+        except Exception as e:
+            synth_err = str(e)
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    # Parse synthesis output
+    synth_done_m  = _re.search(r"SYNTHESIS_DONE:\s*(.+)",        synth_out)
+    metric_move_m = _re.search(r"METRIC_MOVED:\s*(yes|no|unknown)", synth_out, _re.IGNORECASE)
+    next_pri_m    = _re.search(r"NEXT_SESSION_PRIORITY:\s*(.+)", synth_out)
+
+    synth_summary = synth_done_m.group(1).strip()  if synth_done_m  else f"Session {session_num} complete"
+    metric_moved  = metric_move_m.group(1).lower() if metric_move_m else "unknown"
+    next_priority = next_pri_m.group(1).strip()    if next_pri_m    else ""
+
+    # Save synthesis report
+    ts_short = datetime.now().strftime("%Y-%m-%d %H:%M")
+    synthesis_report = (
+        f"# Synthesis Report — {ts_short}\n\n"
+        f"**Session:** #{session_num}\n"
+        f"**Metric:** {metric_now}\n"
+        f"**Metric moved:** {metric_moved}\n"
+        f"**Pivot executed:** {'yes' if pivot_triggered else 'no'}\n"
+        f"**Next priority:** {next_priority}\n\n"
+        f"## Agents Run\n"
+        + "\n".join(f"- {a}" for a in agents_selected)
+        + f"\n\n## Full Synthesis\n\n{synth_out}\n"
+    )
+    (reports_dir / "synthesis.md").write_text(synthesis_report, encoding="utf-8")
+
+    print(f"\n  [NorthStar] Session complete: {synth_summary}")
+    print(f"  [NorthStar] Metric moved: {metric_moved}")
+    if next_priority:
+        print(f"  [NorthStar] Next: {next_priority[:80]}")
+
+    # ── Update growth metrics ─────────────────────────────────
+    m_data = json.loads(GROWTH_FILE.read_text(encoding="utf-8")) if GROWTH_FILE.exists() else {
+        "total_sessions": 0, "total_cost_usd": 0.0,
+        "categories": {}, "self_improvements": [], "next_session_hints": [],
+        "skills_acquired": 0
+    }
+    m_data["total_sessions"] = m_data.get("total_sessions", 0) + 1
+    m_data["categories"]["north_star"] = m_data["categories"].get("north_star", 0) + 1
+    if next_priority:
+        hints = m_data.get("next_session_hints", [])
+        hints.append(next_priority)
+        m_data["next_session_hints"] = hints[-5:]  # keep last 5
+    GROWTH_FILE.write_text(json.dumps(m_data, indent=2), encoding="utf-8")
+
+    # ── Log to activity log ───────────────────────────────────
+    log_entry = (
+        f"\n---\n## {ts_short} — NORTH_STAR [session #{session_num}]\n"
+        f"**{synth_summary}**\n"
+        f"Metric: {metric_now} | Moved: {metric_moved} | "
+        f"Agents: {', '.join(agents_selected)}\n"
+        + (f"Pivot: YES — backlog rewritten\n" if pivot_triggered else "")
+        + f"Cost: $0.00 (VS Code mode)\n"
+    )
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(log_entry)
+
+    return True
+
+
+# ──────────────────────────────────────────────────────────────
 # VS CODE SESSION
 # ──────────────────────────────────────────────────────────────
 
@@ -1442,6 +2097,18 @@ def run_vscode_session():
     """Run a session using Claude Code CLI (no API cost, rate-limit aware)."""
     if _check_vscode_rate_limit():
         return
+
+    # ── North Star multi-agent mode (if configured) ───────────
+    if _is_north_star_configured():
+        success = run_north_star_session()
+        if success:
+            clear_checkpoint()
+            finalize_report()
+            sync_state(f"after north star session {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            return
+        # If North Star session failed, fall through to single-agent mode
+        print("  [NorthStar] Falling back to single-agent mode.")
+
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"\n{'='*60}")
@@ -1473,10 +2140,11 @@ NOTE: You are running via VS Code subscription — there are NO API credits or b
 === YOUR MISSION THIS SESSION ===
 {session_directive}
 
+{_git_rules()}
+
 === EXECUTION RULES ===
 - Read autoagent/PROJECT.md to understand the project and its tech stack commands
 - Always use project-specific commands from autoagent/knowledge.md for tests and import checks
-- Commit: git add -A && git commit -m "agent: <what> — <why>" && git push origin main
 - After every backend change: run import check + tests before committing. Never commit broken code.
 
 === TOOL EQUIVALENTS (use these instead of Python tool calls) ===
@@ -1623,17 +2291,27 @@ FILES: <comma-separated files changed>
 
 
 def sync_state(label: str = "state"):
-    """Push all agent state files to GitHub so any machine can resume."""
-    execute_tool("run_command", {
-        "command": (
-            "git add autoagent/activity_log.md autoagent/knowledge.md autoagent/BACKLOG.md "
-            "autoagent/growth_metrics.json autoagent/daily_budget.json autoagent/checkpoint.json "
-            "autoagent/current_task.md autoagent/api_requests.md autoagent/reports/ 2>nul & "
-            f"git diff --cached --quiet || git commit -m \"agent: sync state — {label}\" && "
-            "git push origin main"
-        ),
-        "timeout": 30
-    })
+    """
+    Commit agent state files to the autoagent repo (never the project repo).
+    Project code changes are handled by the agent itself during sessions.
+    """
+    g      = cfg.get("git", {})
+    aa     = g.get("autoagent", {})
+    branch = aa.get("branch", "main")
+    prefix = aa.get("commit_prefix", "meta")
+    enabled = aa.get("_enabled", False)
+
+    # Stage only autoagent/ state files
+    stage_cmd = (
+        "git add autoagent/activity_log.md autoagent/knowledge.md autoagent/BACKLOG.md "
+        "autoagent/growth_metrics.json autoagent/daily_budget.json autoagent/checkpoint.json "
+        "autoagent/current_task.md autoagent/api_requests.md autoagent/reports/ "
+        "autoagent/shared/ autoagent/meta/findings.md autoagent/meta/backlog.md 2>nul"
+    )
+    parts = [stage_cmd, f'git diff --cached --quiet || git commit -m "{prefix}: sync state — {label}"']
+    if enabled:
+        parts.append(f"git push origin {branch}")
+    execute_tool("run_command", {"command": " && ".join(parts), "timeout": 30})
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1647,8 +2325,15 @@ def run_session():
     cfg_live = load_config()
     ts       = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Pull latest state from GitHub before starting
-    execute_tool("run_command", {"command": "git pull origin main --rebase 2>&1 | tail -3", "timeout": 30})
+    # Pull latest state from remote before starting (respects git policy)
+    g = cfg.get("git", {})
+    if g.get("auto_pull", True):
+        remote = g.get("remote", "origin")
+        branch = g.get("branch", "main")
+        execute_tool("run_command", {
+            "command": f"git pull {remote} {branch} --rebase 2>&1 | tail -3",
+            "timeout": 30
+        })
 
     spend = get_today_spend()
     limit = cfg_live["daily_limit_usd"]
@@ -1902,9 +2587,9 @@ if __name__ == "__main__":
         show_status()
         sys.exit(0)
 
-    once          = "--once" in sys.argv
-    interval_h    = cfg["interval_hours"]
-    tasks_limit   = None
+    once        = "--once"  in sys.argv
+    solo        = "--solo"  in sys.argv   # main agent only, no meta
+    tasks_limit = None
 
     if "--tasks" in sys.argv:
         idx = sys.argv.index("--tasks")
@@ -1915,6 +2600,25 @@ if __name__ == "__main__":
             sys.exit(1)
     if tasks_limit:
         once = False
+
+    # ── Default mode: launch meta-agent in background automatically ───────
+    # Unless --solo is passed, the meta-agent runs in a separate process
+    # so both agents work in parallel without any extra commands from the user.
+    if not solo and not once:
+        meta_script = AGENT_DIR / "meta" / "run.py"
+        if meta_script.exists():
+            try:
+                meta_args = [sys.executable, "-X", "utf8", str(meta_script)]
+                if tasks_limit:
+                    meta_args += ["--tasks", str(tasks_limit)]
+                meta_proc = subprocess.Popen(
+                    meta_args,
+                    cwd=str(ROOT),
+                    creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
+                )
+                print(f"  [AutoAgent] Meta-agent started (PID {meta_proc.pid}) — improving the brain in parallel.")
+            except Exception as e:
+                print(f"  [AutoAgent] Meta-agent could not start: {e} — continuing without it.")
 
     backend_mode = choose_backend_mode()
 

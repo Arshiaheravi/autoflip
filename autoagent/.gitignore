@@ -1,0 +1,39 @@
+# ── Secrets ──────────────────────────────────────────────────────
+credentials.env
+.env
+
+# ── Runtime state (changes every session — not committed) ────────
+backend_mode.json
+daily_budget.json
+sessions.json
+session_counter.json
+growth_metrics.json
+research_queue.md
+activity_log.md
+current_task.md
+BACKLOG.md
+knowledge.md
+checkpoint.json
+health_log.json
+trajectories.md
+api_requests.md
+
+# ── Generated artifacts ───────────────────────────────────────────
+dashboard.html
+__pycache__/
+*.pyc
+*.log
+
+# ── Meta runtime ──────────────────────────────────────────────────
+meta/rate_limit.json
+meta/circuit_breaker.json
+meta/backlog.md
+meta/session_log.md
+meta/findings.md
+meta/benchmarks/
+
+# ── Reports (session outputs) ─────────────────────────────────────
+reports/
+shared/reports/
+shared/mission_brief.md
+shared/north_star.md
